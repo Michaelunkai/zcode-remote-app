@@ -182,11 +182,12 @@ gradlew / gradlew.bat                       # Gradle wrapper included
 
 1. **"Connection problem" error screen** — the session URL expired or the desktop isn't reachable. Generate a fresh remote URL in the ZCode desktop app and use **Change server URL**, or pull down to retry. The app also auto-retries when the network comes back.
 2. **"Mobile Connection Invalid" (AUTH_FAILED)** — ZCode revokes the old link every time a new remote QR/connection is generated. This is server-side, by design: grab the **latest** URL from the desktop app and use **Change server URL**.
-3. **Device-control actions say "Enable Device control (accessibility) first"** — open the panel's setup section and enable **ZCode device control** in accessibility settings.
-5. **Wake-on-LAN doesn't wake the PC** — the PC's NIC (and BIOS "Wake on LAN" / "Power on by PCIe") must be enabled; verify the MAC belongs to the wired/Ethernet adapter. Same-network first; remote wake needs a router UDP forward.
-6. **Brightness needs "Modify system settings"** — one tap in the panel's setup section.
-7. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.
-8. **WebView renderer crash on emulators** — an emulator-only artifact with software rendering; on real devices hardware rendering is used (and the app rebuilds the renderer automatically if the system ever kills it).
+3. **Opens are slow (~9 s) after the phone sat idle** — Samsung's Device Care force-stops apps when the screen turns off. Fix once: **Battery → Background usage limits → Never sleeping apps → add ZCode** (the device panel's Setup section has a direct button). Warm opens are then always <1 s. After a full reboot the very first open still needs the page's normal handshake.
+4. **Device-control actions say "Enable Device control (accessibility) first"** — open the panel's setup section and enable **ZCode device control** in accessibility settings (Android also revokes this on every app update).
+6. **Wake-on-LAN doesn't wake the PC** — the PC's NIC (and BIOS "Wake on LAN" / "Power on by PCIe") must be enabled; verify the MAC belongs to the wired/Ethernet adapter. Same-network first; remote wake needs a router UDP forward.
+7. **Brightness needs "Modify system settings"** — one tap in the panel's setup section.
+8. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.
+9. **WebView renderer crash on emulators** — an emulator-only artifact with software rendering; on real devices hardware rendering is used (and the app rebuilds the renderer automatically if the system ever kills it).
 
 ## 🔒 Privacy
 
