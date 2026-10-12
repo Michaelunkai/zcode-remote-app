@@ -1,0 +1,73 @@
+plugins {
+    id 'com.android.application'
+}
+
+def remoteProps = new Properties()
+def remotePropsFile = rootProject.file("remote.properties")
+if (remotePropsFile.exists()) {
+    remotePropsFile.withInputStream { remoteProps.load(it) }
+}
+def defaultRemoteUrl = remoteProps.getProperty("defaultUrl", "")
+
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file("keystore.properties")
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace 'com.michaelunkai.zcoderemote'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.michaelunkai.zcoderemote"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+        buildConfigField "String", "DEFAULT_REMOTE_URL", "\"${defaultRemoteUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+    }
+
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    constraints {
+        implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    testImplementation 'junit:junit:4.13.2'
+}

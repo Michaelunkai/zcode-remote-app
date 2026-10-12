@@ -1,0 +1,4 @@
+# Copy this file to remote.properties (it is gitignored) and set defaultUrl to
+# YOUR personal ZCode remote session URL. The app opens this URL on launch.
+# URL shape (placeholder - never commit the real one):
+defaultUrl=https://zcode.z.ai/remote/v4?sid=YOUR_SESSION_ID&hash=YOUR_HASH&t=YOUR_TIMESTAMP&mid=YOUR_MACHINE_ID&name=YOUR_MACHINE_NAME&app_version=3.14.5

@@ -1,0 +1,26 @@
+# Build outputs
+build/
+.gradle/
+app/build/
+captures/
+
+# IDE
+.idea/
+*.iml
+
+# Machine-local config
+local.properties
+
+# Secrets / signing (never commit)
+remote.properties
+keystore.properties
+keystore/
+*.keystore
+*.jks
+
+# FORM mission metadata
+.form/
+
+# OS noise
+Thumbs.db
+.DS_Store
