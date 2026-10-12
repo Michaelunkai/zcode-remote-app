@@ -13,7 +13,6 @@ public final class DevicePrefs {
     public static final String PREFS_FILE = "zcode_device";
 
     private static final String KEY_KEEP_ALIVE = "keep_alive_enabled";
-    private static final String KEY_HOTWORD = "hotword_enabled";
     private static final String KEY_WOL_MAC = "wol_mac";
     private static final String KEY_WOL_TARGET = "wol_target";
 
@@ -31,16 +30,6 @@ public final class DevicePrefs {
 
     public static void setKeepAliveEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_KEEP_ALIVE, enabled).apply();
-    }
-
-    public static boolean isHotwordEnabled(Context context) {
-        // Opt-in by design: continuous listening holds the microphone open and
-        // some recognizer implementations play a sound on every listen cycle.
-        return prefs(context).getBoolean(KEY_HOTWORD, false);
-    }
-
-    public static void setHotwordEnabled(Context context, boolean enabled) {
-        prefs(context).edit().putBoolean(KEY_HOTWORD, enabled).apply();
     }
 
     public static String getWakeMac(Context context) {

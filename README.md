@@ -2,7 +2,7 @@
 
 One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs. Instant resume, real-time progress even in the background, "Hey ZCode" voice wake-up, and full no-root control of the phone itself.
 
-[![Release](https://img.shields.io/badge/release-v1.3.2-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.4.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -77,24 +77,20 @@ One-time setup lives at the bottom of the panel: **Device control (accessibility
 
 The panel also opens deterministically for automation: `adb shell am start -n com.michaelunkai.zcoderemote/.MainActivity --ez open_panel true`.
 
-### "Hey ZCode" — voice wake-up (v1.3.0, opt-in since v1.3.1)
-
-- **Off by default** — voice wake is a strictly opt-in feature. When you switch it on in the device panel, a microphone foreground service keeps an on-device speech recognizer warm; saying **"hey zcode"** pops the session open instantly, including above the lockscreen (full-screen-intent fallback). Note: continuous listening holds the microphone open, and some devices play a sound on every listen cycle — that is the platform, not the app.
-- **Zero-battery instant launches are the primary paths**: the **Quick Settings tile "ZCode session"**, the launcher shortcut, and — if you set ZCode as your **default assistant app** (panel → Setup) — the system assistant gesture opens the session instantly. No microphone, no battery cost, always ready.
-
 ## 📋 Requirements
 
 | Requirement | Value |
 |---|---|
 | Android | 8.0+ (API 26+) |
 | Core permission | `INTERNET` |
-| Optional (per feature) | `RECORD_AUDIO` (wake word), accessibility service (device control), `WRITE_SETTINGS` (brightness), notification access |
+| Optional (per feature) | accessibility service (device control), `WRITE_SETTINGS` (brightness), notification access |
 | Analytics / tracking | None |
 | Network calls | Loading your session URL + Wake-on-LAN UDP to the address you configure |
+| Microphone / voice features | None — the app never touches the microphone |
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.3.2.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+1. Download `zcode-remote-v1.4.0.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
 2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and privacy-minimal.
 3. Open **ZCode**.
 4. Optional: long-press the icon → **Device control**, and walk the setup rows at the bottom of the panel.
@@ -106,7 +102,7 @@ The panel also opens deterministically for automation: `adb shell am start -n co
 - Open **ZCode** from the launcher — the session loads fullscreen.
 - Refresh: pull down (only when everything is at the top).
 - Minimize freely — the session stays live; coming back is instant and never asks you to refresh.
-- Say **"hey zcode"** (with the wake word enabled) or use the **ZCode session** tile to jump straight back in.
+- Use the **ZCode session** tile (Quick Settings) to jump straight back in.
 - **Device panel** (notification action or launcher shortcut) to control the phone, or wake the PC.
 
 ## 🔁 Changing the session URL
@@ -172,14 +168,11 @@ app/src/main/java/com/michaelunkai/zcoderemote/
     ZcodeControlAccessibilityService.java   # no-root control engine: gestures, nav, text, screenshots
     ZcodeBridge.java                        # origin-guarded window.ZcodeAndroid JS bridge
     SessionKeepService.java                 # keep-alive foreground service (instant resume)
-    HotwordService.java                     # "Hey ZCode" always-listening service
-    HotwordMatcher.java                     # tolerant wake-phrase matcher
-    ZcodeVoiceInteractionService/…Session*  # assistant-app integration (zero-battery launch)
     SessionTileService.java                 # Quick Settings tile
     SessionLauncher.java                    # reliable open-from-anywhere (+ full-screen-intent fallback)
     WakePc.java                             # Wake-on-LAN magic packets
     DevicePrefs.java                        # feature toggles + WoL target
-app/src/test/java/…/                        # JVM-pure unit tests (Url, WakePc, HotwordMatcher)
+app/src/test/java/…/                        # JVM-pure unit tests (Url, WakePc)
 app/src/main/res/…                          # resources (icons, layouts, themes, service configs)
 remote.properties.example                   # template for the embedded default URL
 gradlew / gradlew.bat                       # Gradle wrapper included
@@ -190,7 +183,6 @@ gradlew / gradlew.bat                       # Gradle wrapper included
 1. **"Connection problem" error screen** — the session URL expired or the desktop isn't reachable. Generate a fresh remote URL in the ZCode desktop app and use **Change server URL**, or pull down to retry. The app also auto-retries when the network comes back.
 2. **"Mobile Connection Invalid" (AUTH_FAILED)** — ZCode revokes the old link every time a new remote QR/connection is generated. This is server-side, by design: grab the **latest** URL from the desktop app and use **Change server URL**.
 3. **Device-control actions say "Enable Device control (accessibility) first"** — open the panel's setup section and enable **ZCode device control** in accessibility settings.
-4. **"Hey ZCode" not triggering** — check the panel toggle is on and Microphone shows ✓. The recognizer runs on-device; very noisy rooms can delay detection. Battery-saver modes may pause background mic access.
 5. **Wake-on-LAN doesn't wake the PC** — the PC's NIC (and BIOS "Wake on LAN" / "Power on by PCIe") must be enabled; verify the MAC belongs to the wired/Ethernet adapter. Same-network first; remote wake needs a router UDP forward.
 6. **Brightness needs "Modify system settings"** — one tap in the panel's setup section.
 7. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.

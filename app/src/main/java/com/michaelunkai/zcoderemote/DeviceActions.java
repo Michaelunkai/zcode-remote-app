@@ -286,9 +286,4 @@ public final class DeviceActions {
     public static boolean isAccessibilityEnabled(Context context) {
         return ZcodeControlAccessibilityService.isReady();
     }
-
-    public static boolean hasMicPermission(Context context) {
-        return context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
-                == PackageManager.PERMISSION_GRANTED;
-    }
 }

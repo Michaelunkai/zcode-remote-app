@@ -18,7 +18,7 @@
     <string name="toast_download_started">Download started</string>
     <string name="empty_url_hint">No URL configured yet.</string>
 
-    <!-- Keep-alive + hotword + ready notifications -->
+    <!-- Keep-alive + ready notifications -->
     <string name="channel_live_name">Live session</string>
     <string name="channel_live_desc">Keeps the session alive for instant resume</string>
     <string name="channel_ready_name">Session ready</string>
@@ -27,8 +27,6 @@
     <string name="notif_live_text">Real-time progress in background • synced %1$s</string>
     <string name="notif_action_panel">Device panel</string>
     <string name="notif_action_stop">Stop</string>
-    <string name="notif_hotword_title">\"Hey ZCode\" listening</string>
-    <string name="notif_hotword_text">Say \"hey zcode\" to open the session instantly</string>
     <string name="notif_ready_title">ZCode session ready</string>
     <string name="notif_ready_text">Tap to open the live session</string>
 
@@ -70,21 +68,18 @@
     <!-- Always-live toggles -->
     <string name="panel_section_live">Always live</string>
     <string name="panel_keep_alive">Keep session live (instant resume, real-time progress)</string>
-    <string name="panel_hotword">\"Hey ZCode\" wake word (off by default)</string>
-    <string name="panel_hotword_note">Opt-in: when on, the microphone stays open continuously and some devices play a sound on every listen cycle. For a zero-battery instant launch, use the ZCode Quick Settings tile or set ZCode as the assistant app.</string>
     <string name="toast_keep_alive_on">Session stays live in background</string>
     <string name="toast_keep_alive_off">Keep-alive stopped</string>
-    <string name="toast_hotword_on">Listening for \"Hey ZCode\"</string>
-    <string name="toast_hotword_off">Wake word off</string>
-    <string name="toast_hotword_needs_mic">Microphone permission required</string>
 
     <!-- Setup -->
     <string name="panel_section_setup">Setup &amp; permissions</string>
     <string name="setup_accessibility">Device control (accessibility): %1$s</string>
-    <string name="setup_mic">Microphone: %1$s</string>
     <string name="setup_battery">Battery optimization exempt: %1$s</string>
     <string name="setup_write_settings">Modify system settings: %1$s</string>
-    <string name="setup_assistant">Default assistant (zero-battery launch)</string>
+    <string name="setup_assistant">Assistant trigger — power-press / corner swipe, like Google (zero mic, zero battery): %1$s</string>
+    <string name="toast_assistant_already">ZCode is already the assistant app</string>
+    <string name="toast_assistant_set">ZCode is now the assistant — power-press or corner-swipe opens the session</string>
+    <string name="toast_assistant_declined">Assistant role not changed</string>
     <string name="setup_overlay">Overlay permission (instant launch)</string>
     <string name="setup_notifications">Notifications: %1$s</string>
 

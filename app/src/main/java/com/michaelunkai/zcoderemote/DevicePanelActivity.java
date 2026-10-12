@@ -41,8 +41,11 @@ import java.util.Locale;
  */
 public class DevicePanelActivity extends AppCompatActivity {
 
-    private static final int REQUEST_MIC = 51;
     private static final int REQUEST_NOTIFICATIONS = 52;
+    private static final int REQUEST_ASSISTANT = 53;
+
+    /** Hidden constant; literal from android.app.role.RoleManager. */
+    private static final String ROLE_VOICE_INTERACTION = "android.app.role.VOICE_INTERACTION";
 
     private LinearLayout root;
     private TextView result;
@@ -59,7 +62,6 @@ public class DevicePanelActivity extends AppCompatActivity {
 
     private void startServicesIfReady() {
         SessionKeepService.start(this);
-        HotwordService.startIfEnabled(this);
     }
 
     private void buildUi() {
@@ -122,7 +124,6 @@ public class DevicePanelActivity extends AppCompatActivity {
 
         root.addView(sectionLabel(getString(R.string.panel_section_live)));
         root.addView(buildKeepAliveSwitch());
-        root.addView(buildHotwordSwitch());
 
         root.addView(sectionLabel(getString(R.string.panel_section_setup)));
         root.addView(buildSetupGrid());
@@ -222,34 +223,6 @@ public class DevicePanelActivity extends AppCompatActivity {
         return pad(toggle);
     }
 
-    private View buildHotwordSwitch() {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        Switch toggle = new Switch(this);
-        toggle.setText(getString(R.string.panel_hotword));
-        toggle.setTextColor(0xFFFFFFFF);
-        toggle.setChecked(DevicePrefs.isHotwordEnabled(this));
-        toggle.setOnCheckedChangeListener((button, on) -> {
-            DevicePrefs.setHotwordEnabled(this, on);
-            if (on) {
-                if (DeviceActions.hasMicPermission(this)) {
-                    HotwordService.startIfEnabled(this);
-                    feedback().onResult(getString(R.string.toast_hotword_on));
-                } else {
-                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
-                }
-            } else {
-                HotwordService.stop(this);
-                feedback().onResult(getString(R.string.toast_hotword_off));
-            }
-        });
-        container.addView(pad(toggle));
-        TextView note = text(getString(R.string.panel_hotword_note), 12, false, 0xFF9AA3B2);
-        note.setPadding(dp(8), 0, dp(8), dp(6));
-        container.addView(note);
-        return container;
-    }
-
     private LinearLayout buildSetupGrid() {
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
@@ -257,9 +230,6 @@ public class DevicePanelActivity extends AppCompatActivity {
                 () -> getString(R.string.setup_accessibility, DeviceActions.isAccessibilityEnabled(this)
                         ? "✓" : "—"),
                 () -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
-        grid.addView(setupButton(
-                () -> getString(R.string.setup_mic, DeviceActions.hasMicPermission(this) ? "✓" : "—"),
-                this::requestMicIfNeeded));
         grid.addView(setupButton(
                 () -> getString(R.string.setup_battery, DeviceActions.isIgnoringBatteryOptimizations(this)
                         ? "✓" : "—"),
@@ -269,8 +239,9 @@ public class DevicePanelActivity extends AppCompatActivity {
                 () -> startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.fromParts(
                         "package", getPackageName(), null)))));
         grid.addView(setupButton(
-                () -> getString(R.string.setup_assistant),
-                () -> startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))));
+                () -> getString(R.string.setup_assistant,
+                        isAssistantHeld() ? "✓" : "—"),
+                this::requestAssistantRole));
         grid.addView(setupButton(
                 () -> getString(R.string.setup_overlay),
                 () -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.fromParts(
@@ -296,10 +267,38 @@ public class DevicePanelActivity extends AppCompatActivity {
         buildUi();
     }
 
-    private void requestMicIfNeeded() {
-        if (!DeviceActions.hasMicPermission(this)) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
+    private void requestAssistantRole() {
+        if (isAssistantHeld()) {
+            feedback().onResult(getString(R.string.toast_assistant_already));
+            return;
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
+            if (rm != null && rm.isRoleAvailable(ROLE_VOICE_INTERACTION)) {
+                try {
+                    startActivityForResult(rm.createRequestRoleIntent(
+                            ROLE_VOICE_INTERACTION), REQUEST_ASSISTANT);
+                    return;
+                } catch (Exception e) {
+                    // fall through to the manual settings screen
+                }
+            }
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS));
+        } catch (Exception e) {
+            feedback().onResult(getString(R.string.action_failed));
+        }
+    }
+
+    private boolean isAssistantHeld() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
+            if (rm != null) {
+                return rm.isRoleHeld(ROLE_VOICE_INTERACTION);
+            }
+        }
+        return false;
     }
 
     private void requestNotificationsIfNeeded() {
@@ -377,18 +376,18 @@ public class DevicePanelActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
             int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_MIC) {
-            boolean granted = grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            if (granted) {
-                HotwordService.startIfEnabled(this);
-                feedback().onResult(getString(R.string.toast_hotword_on));
-            } else {
-                DevicePrefs.setHotwordEnabled(this, false);
-                feedback().onResult(getString(R.string.toast_hotword_needs_mic));
-            }
+        if (requestCode == REQUEST_NOTIFICATIONS) {
             refreshSetup();
-        } else if (requestCode == REQUEST_NOTIFICATIONS) {
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_ASSISTANT) {
+            feedback().onResult(isAssistantHeld()
+                    ? getString(R.string.toast_assistant_set)
+                    : getString(R.string.toast_assistant_declined));
             refreshSetup();
         }
     }
