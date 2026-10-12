@@ -2,7 +2,7 @@
 
 One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs. Instant resume, real-time progress even in the background, "Hey ZCode" voice wake-up, and full no-root control of the phone itself.
 
-[![Release](https://img.shields.io/badge/release-v1.3.1-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.3.2-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -73,7 +73,9 @@ The **Device panel** (notification action, or long-press the launcher icon) is a
 - **Wake-on-LAN** — wake the PC from full power-off (set the PC NIC's MAC in the panel; on the same network it just works, and from far away you can forward a UDP port on your router to the PC's subnet broadcast and use `public-ip:port`)
 - An origin-guarded JS bridge (`window.ZcodeAndroid`) exposes the same powers to the loaded session page
 
-One-time setup lives at the bottom of the panel: **Device control (accessibility)** must be enabled — everything else (microphone, battery exemption, modify-system-settings, overlay) has direct shortcuts.
+One-time setup lives at the bottom of the panel: **Device control (accessibility)** must be enabled — everything else (battery exemption, modify-system-settings, overlay) has direct shortcuts. Two notes: Android revokes accessibility permission every time the app is **updated** (system security behavior) — one tap in the panel's setup row re-enables it; and the wake-word feature stays **off** unless you deliberately switch it on (its microphone row in Setup is intentionally left "—").
+
+The panel also opens deterministically for automation: `adb shell am start -n com.michaelunkai.zcoderemote/.MainActivity --ez open_panel true`.
 
 ### "Hey ZCode" — voice wake-up (v1.3.0, opt-in since v1.3.1)
 
@@ -92,7 +94,7 @@ One-time setup lives at the bottom of the panel: **Device control (accessibility
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.3.1.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+1. Download `zcode-remote-v1.3.2.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
 2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and privacy-minimal.
 3. Open **ZCode**.
 4. Optional: long-press the icon → **Device control**, and walk the setup rows at the bottom of the panel.

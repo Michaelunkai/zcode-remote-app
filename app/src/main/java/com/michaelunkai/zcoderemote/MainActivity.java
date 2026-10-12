@@ -152,6 +152,15 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+
+        maybeOpenDevicePanel(getIntent());
+    }
+
+    /** `am start ... --ez open_panel true` — deterministic adb entry to the panel. */
+    private void maybeOpenDevicePanel(Intent intent) {
+        if (intent != null && intent.getBooleanExtra("open_panel", false)) {
+            startActivity(new Intent(this, DevicePanelActivity.class));
+        }
     }
 
     private void configureWebViewSettings() {
@@ -344,6 +353,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        maybeOpenDevicePanel(intent);
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
             return;
         }
