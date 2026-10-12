@@ -5,10 +5,13 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -24,7 +27,6 @@ import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,15 +36,62 @@ public class MainActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
     private static final Pattern HTTP_URL_PATTERN = Pattern.compile("https?://\\S+");
 
+    /**
+     * Persistent per-page hook: reports whenever any scrollable container moves
+     * away from its top (cheap O(1) per event; the full scan in
+     * SCROLL_PROBE_JS re-syncs the exact state at the start of every gesture).
+     */
+    private static final String SCROLL_WATCHER_JS =
+            "(function(){"
+            + "function top(e){return !!e&&e.scrollTop>0;}"
+            + "function scr(e){if(!e||e===document||e===document.documentElement||e===document.body)return false;"
+            + "var s=window.getComputedStyle(e);"
+            + "return s.overflowY==='auto'||s.overflowY==='scroll'||s.overflow==='auto'||s.overflow==='scroll';}"
+            + "function docTop(){var d=document.scrollingElement||document.documentElement||document.body;return top(d);}"
+            + "if(window.__zcHooked){AndroidScroll.onScrolled(docTop());return;}"
+            + "window.__zcHooked=true;"
+            + "window.addEventListener('scroll',function(ev){var t=ev.target;"
+            + "var s=(t===document||t===document.documentElement||t===document.body)?docTop():(top(t)&&scr(t));"
+            + "if(s){AndroidScroll.onScrolled(true);}},true);"
+            + "AndroidScroll.onScrolled(docTop());"
+            + "})();";
+
+    /** Accurate full scan (document + every scrollable container) before a drag starts. */
+    private static final String SCROLL_PROBE_JS =
+            "(function(){"
+            + "function top(e){return !!e&&e.scrollTop>0;}"
+            + "function scr(e){if(!e||e===document||e===document.documentElement||e===document.body)return false;"
+            + "var s=window.getComputedStyle(e);"
+            + "return s.overflowY==='auto'||s.overflowY==='scroll'||s.overflow==='auto'||s.overflow==='scroll';}"
+            + "function docTop(){var d=document.scrollingElement||document.documentElement||document.body;return top(d);}"
+            + "if(docTop()){AndroidScroll.onScrolled(true);return;}"
+            + "var all=document.querySelectorAll('*');"
+            + "for(var i=0;i<all.length;i++){var e=all[i];"
+            + "if(e.scrollTop>0&&scr(e)){AndroidScroll.onScrolled(true);return;}}"
+            + "AndroidScroll.onScrolled(false);"
+            + "})();";
+
     private UrlStore urlStore;
     private WebView webView;
-    private SwipeRefreshLayout swipeRefresh;
+    private SwipeRefreshGate swipeRefresh;
     private ProgressBar progressBar;
     private View errorOverlay;
     private TextView errorMessage;
     private ValueCallback<Uri[]> fileUploadCallback;
     private String lastLoadedUrl = null;
     private boolean mainFrameError;
+    private volatile boolean innerScrolledUp = false;
+    private long lastScrollProbeAt = 0L;
+
+    /** JS bridge: the injected scroll watcher reports inner-container state. */
+    private class ScrollWatcher {
+        @JavascriptInterface
+        public void onScrolled(boolean anyContainerScrolledUp) {
+            innerScrolledUp = anyContainerScrolledUp;
+        }
+    }
+
+    private final ScrollWatcher scrollWatcher = new ScrollWatcher();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,6 +116,8 @@ public class MainActivity extends AppCompatActivity {
 
         configureWebViewSettings();
         configureWebViewClients();
+
+        swipeRefresh.setGate(() -> innerScrolledUp);
 
         swipeRefresh.setOnRefreshListener(() -> {
             if (webView.getUrl() != null) {
@@ -108,6 +159,8 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setDefaultTextEncodingName("utf-8");
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        webView.addJavascriptInterface(scrollWatcher, "AndroidScroll");
     }
 
     private void configureWebViewClients() {
@@ -147,6 +200,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                innerScrolledUp = false;
+                view.evaluateJavascript(SCROLL_WATCHER_JS, null);
                 if (mainFrameError) {
                     mainFrameError = false;
                 } else {
@@ -230,6 +285,32 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             // The system DownloadManager refused the request; nothing else to do.
         }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            maybeProbeScrollState();
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    /**
+     * Re-syncs the exact scroll state at the start of every gesture: the cheap
+     * scroll listener can go stale (a container scrolled back to its top only
+     * leaves a stale "scrolled" flag), and SwipeRefreshGate reads the flag
+     * synchronously while the drag develops.
+     */
+    private void maybeProbeScrollState() {
+        if (webView == null) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (now - lastScrollProbeAt < 200L) {
+            return;
+        }
+        lastScrollProbeAt = now;
+        webView.evaluateJavascript(SCROLL_PROBE_JS, null);
     }
 
     @Override

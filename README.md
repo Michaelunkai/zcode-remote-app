@@ -2,7 +2,7 @@
 
 One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs.
 
-[![Release](https://img.shields.io/badge/release-v1.1.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.2.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -37,7 +37,9 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 ## ✨ Features
 
 - Fullscreen WebView session — zero browser UI
-- Pull-to-refresh
+- Pull-to-refresh that never fights your scrolling — it only fires when the page **and every inner list** are at their very top; scrolling up inside a session never refreshes (v1.2.0)
+- No overscroll glow/bounce at the edges — the page feels native, not browserish
+- Distinctive adaptive icon (terminal-Z mark, violet cursor, gradient background, themed-icon support)
 - In-page progress bar
 - Back button walks web history, then **minimizes** (never kills the session)
 - Keep-screen-on while the app is open
@@ -61,7 +63,7 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.1.0.apk` (~2.5 MB) from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+1. Download `zcode-remote-v1.2.0.apk` (~2.5 MB) from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
 2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and permission-minimal.
 3. Open **ZCode**.
 
