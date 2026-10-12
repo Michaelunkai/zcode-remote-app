@@ -70,7 +70,8 @@
     <!-- Always-live toggles -->
     <string name="panel_section_live">Always live</string>
     <string name="panel_keep_alive">Keep session live (instant resume, real-time progress)</string>
-    <string name="panel_hotword">\"Hey ZCode\" wake word</string>
+    <string name="panel_hotword">\"Hey ZCode\" wake word (off by default)</string>
+    <string name="panel_hotword_note">Opt-in: when on, the microphone stays open continuously and some devices play a sound on every listen cycle. For a zero-battery instant launch, use the ZCode Quick Settings tile or set ZCode as the assistant app.</string>
     <string name="toast_keep_alive_on">Session stays live in background</string>
     <string name="toast_keep_alive_off">Keep-alive stopped</string>
     <string name="toast_hotword_on">Listening for \"Hey ZCode\"</string>

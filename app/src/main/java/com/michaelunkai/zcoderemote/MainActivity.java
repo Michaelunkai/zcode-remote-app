@@ -360,9 +360,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Keep the session page alive (and the hotword listener armed) as long as
-        // the user wants them: returning to the app must land on a live page in
-        // well under a second, with progress already up to date.
+        // Keep the session page alive (and the hotword listener armed, if the user
+        // opted in) as long as the user wants them: returning to the app must land
+        // on a live page in well under a second, with progress already up to date.
+        reconcileHotwordPref();
         SessionKeepService.start(this);
         HotwordService.startIfEnabled(this);
         String effective = urlStore.get();
@@ -372,6 +373,13 @@ public class MainActivity extends AppCompatActivity {
         }
         if (!effective.equals(lastLoadedUrl)) {
             loadEffectiveUrl();
+        }
+    }
+
+    /** The wake word is opt-in: if the mic permission is gone, the switch follows. */
+    private void reconcileHotwordPref() {
+        if (DevicePrefs.isHotwordEnabled(this) && !DeviceActions.hasMicPermission(this)) {
+            DevicePrefs.setHotwordEnabled(this, false);
         }
     }
 

@@ -119,7 +119,19 @@ public class HotwordService extends Service implements RecognitionListener {
 
     private void createRecognizer() {
         destroyRecognizer();
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        // Prefer the on-device recognizer (API 31+): no network round trip and it
+        // does not play the per-cycle "ready" beep the network recognizer plays
+        // on some OEMs (Samsung). Fall back to the standard recognizer.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            } catch (Exception e) {
+                recognizer = null;
+            }
+        }
+        if (recognizer == null) {
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        }
         recognizer.setRecognitionListener(this);
         lastCallbackAt = System.currentTimeMillis();
     }
@@ -151,12 +163,13 @@ public class HotwordService extends Service implements RecognitionListener {
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toString());
         intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
         intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
         try {
             recognizer.startListening(intent);
             lastCallbackAt = System.currentTimeMillis();
         } catch (Exception e) {
             Log.w(TAG, "startListening failed; retrying", e);
-            handler.postDelayed(restart, 1000L);
+            handler.postDelayed(restart, 2000L);
         }
     }
 

@@ -223,6 +223,8 @@ public class DevicePanelActivity extends AppCompatActivity {
     }
 
     private View buildHotwordSwitch() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
         Switch toggle = new Switch(this);
         toggle.setText(getString(R.string.panel_hotword));
         toggle.setTextColor(0xFFFFFFFF);
@@ -241,7 +243,11 @@ public class DevicePanelActivity extends AppCompatActivity {
                 feedback().onResult(getString(R.string.toast_hotword_off));
             }
         });
-        return pad(toggle);
+        container.addView(pad(toggle));
+        TextView note = text(getString(R.string.panel_hotword_note), 12, false, 0xFF9AA3B2);
+        note.setPadding(dp(8), 0, dp(8), dp(6));
+        container.addView(note);
+        return container;
     }
 
     private LinearLayout buildSetupGrid() {

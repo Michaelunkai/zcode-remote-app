@@ -34,7 +34,9 @@ public final class DevicePrefs {
     }
 
     public static boolean isHotwordEnabled(Context context) {
-        return prefs(context).getBoolean(KEY_HOTWORD, true);
+        // Opt-in by design: continuous listening holds the microphone open and
+        // some recognizer implementations play a sound on every listen cycle.
+        return prefs(context).getBoolean(KEY_HOTWORD, false);
     }
 
     public static void setHotwordEnabled(Context context, boolean enabled) {
