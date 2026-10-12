@@ -15,6 +15,9 @@ public final class DevicePrefs {
     private static final String KEY_KEEP_ALIVE = "keep_alive_enabled";
     private static final String KEY_WOL_MAC = "wol_mac";
     private static final String KEY_WOL_TARGET = "wol_target";
+    private static final String KEY_BRIDGE_ENABLED = "bridge_enabled";
+    private static final String KEY_BRIDGE_TOKEN = "bridge_token";
+    private static final String KEY_BRIDGE_PORT = "bridge_port";
 
     private DevicePrefs() {
     }
@@ -46,6 +49,37 @@ public final class DevicePrefs {
 
     public static void setWakeTarget(Context context, String target) {
         prefs(context).edit().putString(KEY_WOL_TARGET, target == null ? "" : target.trim()).apply();
+    }
+
+    public static boolean isBridgeEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_BRIDGE_ENABLED, true);
+    }
+
+    public static void setBridgeEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_BRIDGE_ENABLED, enabled).apply();
+    }
+
+    /** 32-hex-char bearer token, generated once on first use. */
+    public static String getBridgeToken(Context context) {
+        String token = prefs(context).getString(KEY_BRIDGE_TOKEN, null);
+        if (token == null || token.length() != 32) {
+            java.security.SecureRandom random = new java.security.SecureRandom();
+            StringBuilder builder = new StringBuilder(32);
+            for (int i = 0; i < 16; i++) {
+                builder.append(String.format("%02x", random.nextInt(256)));
+            }
+            token = builder.toString();
+            prefs(context).edit().putString(KEY_BRIDGE_TOKEN, token).apply();
+        }
+        return token;
+    }
+
+    public static int getBridgePort(Context context) {
+        return prefs(context).getInt(KEY_BRIDGE_PORT, 8790);
+    }
+
+    public static void setBridgePort(Context context, int port) {
+        prefs(context).edit().putInt(KEY_BRIDGE_PORT, port).apply();
     }
 
     /** "host:port" -> port, defaults to 9 (WoL discard port) when absent/invalid. */

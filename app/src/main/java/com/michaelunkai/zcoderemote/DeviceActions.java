@@ -112,6 +112,77 @@ public final class DeviceActions {
         });
     }
 
+    /** Launches an app by name or package: "youtube" matches label or package id. */
+    public static void launchAppByName(Context context, String nameOrPackage, Callback callback) {
+        run(context, callback, () -> {
+            String needle = nameOrPackage.trim().toLowerCase(Locale.ROOT);
+            Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            for (android.content.pm.ResolveInfo info
+                    : context.getPackageManager().queryIntentActivities(main, 0)) {
+                String pkg = info.activityInfo.packageName;
+                String label = String.valueOf(info.loadLabel(context.getPackageManager()))
+                        .toLowerCase(Locale.ROOT);
+                if (pkg.equals(needle)
+                        || pkg.endsWith("." + needle)
+                        || pkg.contains("." + needle + ".")
+                        || label.equals(needle)
+                        || label.contains(needle)) {
+                    String launchPkg = pkg;
+                    MAIN.post(() -> launchApp(context, launchPkg, callback));
+                    return;
+                }
+            }
+            callback.onResult(context.getString(R.string.action_app_not_found));
+        });
+    }
+
+    /**
+     * Plays/searches media in a specific app: wakes the screen, opens the app's
+     * search deep link, then clicks the first result node containing the query.
+     * app: youtube | ytmusic | spotify (default youtube).
+     */
+    public static void mediaSearch(Context context, String app, String query, Callback callback) {
+        run(context, callback, () -> {
+            String q = android.net.Uri.encode(query);
+            String url;
+            String pkg;
+            switch (app == null ? "" : app.toLowerCase(Locale.ROOT)) {
+                case "spotify":
+                    url = "spotify:search:" + query;
+                    pkg = "com.spotify.music";
+                    break;
+                case "ytmusic":
+                case "music":
+                    url = "https://music.youtube.com/search?q=" + q;
+                    pkg = "com.google.android.apps.youtube.music";
+                    break;
+                default:
+                    url = "https://www.youtube.com/results?search_query=" + q;
+                    pkg = "com.google.android.youtube";
+                    break;
+            }
+            if (ZcodeControlAccessibilityService.get() == null) {
+                callback.onResult(context.getString(R.string.action_need_accessibility));
+                return;
+            }
+            ZcodeControlAccessibilityService.wakeScreenIfOff(context);
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+            } catch (Exception e) {
+                callback.onResult(context.getString(R.string.action_app_not_found));
+                return;
+            }
+            // Let the app render its results, then click the matching node.
+            ZcodeControlAccessibilityService.get().mainHandler().postDelayed(() -> {
+                if (ZcodeControlAccessibilityService.isReady()) {
+                    ZcodeControlAccessibilityService.get().clickNodeContaining(query, callback);
+                }
+            }, 3500L);
+        });
+    }
+
     public static void launchApp(Context context, String packageName, Callback callback) {
         run(context, callback, () -> {
             Intent launch = context.getPackageManager().getLaunchIntentForPackage(packageName);

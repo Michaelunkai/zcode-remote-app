@@ -21,6 +21,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Locale;
 import java.util.concurrent.Executor;
 
 /**
@@ -52,7 +53,25 @@ public class ZcodeControlAccessibilityService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
-        // Passive service: we only act on explicit commands, never observe content.
+        // Tracks the foreground app so agent/panel queries know what is on screen.
+        if (event != null
+                && event.getEventType() == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && event.getPackageName() != null) {
+            lastForegroundPackage = event.getPackageName().toString();
+            lastForegroundAt = System.currentTimeMillis();
+        }
+    }
+
+    private volatile String lastForegroundPackage;
+    private volatile long lastForegroundAt;
+
+    public static String getForegroundPackage() {
+        ZcodeControlAccessibilityService service = instance;
+        if (service == null) {
+            return null;
+        }
+        // Stale by more than 10 s means no fresh window events (rare); still report.
+        return service.lastForegroundPackage;
     }
 
     @Override
@@ -246,6 +265,104 @@ public class ZcodeControlAccessibilityService extends AccessibilityService {
         Rect rect = new Rect();
         focused.getBoundsInScreen(rect);
         callback.onBounds(rect);
+    }
+
+    /**
+     * Clicks the first on-screen node matching the query. Tolerates result-page
+     * wording: tries the full phrase, then its significant words (longest
+     * first), re-scanning while the page renders (results load late).
+     */
+    public void clickNodeContaining(String query, DeviceActions.Callback callback) {
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
+        String lowered = query.toLowerCase(Locale.ROOT).trim();
+        candidates.add(lowered);
+        String[] words = lowered.split("[\s,.:;—–()-]+");
+        java.util.Arrays.sort(words, (a, b) -> Integer.compare(b.length(), a.length()));
+        for (String word : words) {
+            if (word.length() >= 4) {
+                candidates.add(word);
+            }
+        }
+        attemptClick(new java.util.ArrayList<>(candidates), 0, query, callback);
+    }
+
+    private void attemptClick(java.util.List<String> candidates, int index,
+            String originalQuery, DeviceActions.Callback callback) {
+        if (!isReady()) {
+            callback.onResult(context().getString(R.string.action_failed));
+            return;
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root != null && index < candidates.size()) {
+            String candidate = candidates.get(index);
+            AccessibilityNodeInfo target = findClickableContaining(root, candidate, 0);
+            if (target != null) {
+                boolean ok = target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                callback.onResult(ok ? context().getString(R.string.action_ok)
+                        : context().getString(R.string.action_failed));
+                return;
+            }
+        }
+        int next = index + 1;
+        if (next <= candidates.size() + 4) {
+            // Results can still be rendering: rescan, and after exhausting the
+            // word list keep rescanning briefly for late-loading content.
+            mainHandler.postDelayed(() -> attemptClick(candidates, next,
+                    originalQuery, callback), 800L);
+        } else {
+            callback.onResult(context().getString(R.string.action_no_match, originalQuery));
+        }
+    }
+
+    /** Depth-limited search for a clickable node matching the query text. */
+    private AccessibilityNodeInfo findClickableContaining(AccessibilityNodeInfo node,
+            String query, int depth) {
+        if (node == null || depth > 24) {
+            return null;
+        }
+        CharSequence text = node.getText();
+        CharSequence desc = node.getContentDescription();
+        boolean match = (text != null && text.toString().toLowerCase(Locale.ROOT).contains(query))
+                || (desc != null && desc.toString().toLowerCase(Locale.ROOT).contains(query));
+        if (match && (node.isClickable() || node.isScrollable())) {
+            // Prefer clicking the clickable ancestor of a matching leaf.
+            AccessibilityNodeInfo p = node;
+            for (int i = 0; i < 4 && p != null; i++) {
+                if (p.isClickable()) {
+                    return p;
+                }
+                p = p.getParent();
+            }
+            return node;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo found = findClickableContaining(child, query, depth + 1);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Wakes the screen so remote automation works even from a dark pocket. */
+    public static void wakeScreenIfOff(Context context) {
+        try {
+            android.os.PowerManager pm =
+                    (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isInteractive()) {
+                @SuppressWarnings("deprecation")
+                android.os.PowerManager.WakeLock wake = pm.newWakeLock(
+                        android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                                | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                        "zcode:autoWake");
+                wake.acquire(6000L);
+            }
+        } catch (Exception ignored) {
+            // Best effort; the action still runs when the user next wakes the screen.
+        }
     }
 
     public Handler mainHandler() {

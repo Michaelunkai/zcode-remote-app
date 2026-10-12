@@ -54,6 +54,14 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 - Survives rotation without reloading (configChanges handled)
 - Session URL stored only in app-private storage
 
+### PC agent bridge (v1.5.0)
+
+The app runs a token-authenticated command endpoint on the local network so the desktop agent can drive the phone: launch any app, search & play a song in YouTube/YT Music/Spotify (it opens the search and clicks the matching result), tap/swipe/type, navigate, screenshot, and report status (screen, lock, foreground app, battery).
+
+- Address + bearer token: **Device control panel → "PC agent bridge"**.
+- PC side: `pc-helper/zphone.py` (`python zphone.py status`, `zphone song "query" youtube`, `zphone open youtube`, …). Configure once with `zphone set <phone-ip> 8790 <token>`.
+- Everything executes locally through the accessibility engine — no adb, no root; works whenever the PC and phone can reach each other (home network, or any routable address such as a VPN IP).
+
 ### Instant resume & real-time progress (v1.3.0)
 
 - **Never "please refresh" again** — a keep-alive foreground service plus a renderer pinned at full priority keep the page (sessions menu, per-session progress, running tasks) fully alive while the app is minimized. Cold start ≈150 ms; returning to the app or switching session tabs lands on an already-live page in well under a second.

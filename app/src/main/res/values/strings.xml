@@ -84,6 +84,11 @@
     <string name="toast_assistant_declined">Assistant role not changed</string>
     <string name="setup_overlay">Overlay permission (instant launch)</string>
     <string name="setup_notifications">Notifications: %1$s</string>
+    <string name="bridge_section">PC agent bridge</string>
+    <string name="bridge_status">Serving at http://%1$s:%2$d — give this address and the token below to the PC agent (zphone).</string>
+    <string name="bridge_token_label">Bearer token</string>
+    <string name="bridge_off">PC agent bridge is off</string>
+    <string name="bridge_on">PC agent bridge is on — the PC agent can control this phone</string>
 
     <!-- Action results -->
     <string name="action_ok">Done</string>
@@ -95,6 +100,7 @@
     <string name="action_no_torch">No flash unit</string>
     <string name="action_need_write_settings">Grant Modify system settings first</string>
     <string name="action_app_not_found">App not found</string>
+    <string name="action_no_match">No on-screen match for: %1$s</string>
     <string name="bridge_rejected">Blocked: page is not the session host</string>
 
     <!-- Services -->

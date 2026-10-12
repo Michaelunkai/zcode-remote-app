@@ -50,6 +50,13 @@ public class SessionKeepService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannels(this);
+        ZphoneServer.start(this);
+    }
+
+    @Override
+    public void onDestroy() {
+        ZphoneServer.stop();
+        super.onDestroy();
     }
 
     @Override
@@ -59,6 +66,7 @@ public class SessionKeepService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        ZphoneServer.start(this);
         Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification,

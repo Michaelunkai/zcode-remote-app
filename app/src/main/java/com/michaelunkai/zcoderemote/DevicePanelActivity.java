@@ -128,6 +128,9 @@ public class DevicePanelActivity extends AppCompatActivity {
         root.addView(sectionLabel(getString(R.string.panel_section_setup)));
         root.addView(buildSetupGrid());
 
+        root.addView(sectionLabel(getString(R.string.bridge_section)));
+        root.addView(buildBridgeCard());
+
         result = text(getString(R.string.panel_result_hint), 13, false, 0xFF8B7CFF);
         result.setMinLines(1);
         LinearLayout.LayoutParams resultParams = new LinearLayout.LayoutParams(
@@ -135,6 +138,40 @@ public class DevicePanelActivity extends AppCompatActivity {
         resultParams.topMargin = dp(16);
         result.setLayoutParams(resultParams);
         root.addView(result);
+    }
+
+    private LinearLayout buildBridgeCard() {
+        LinearLayout card = card();
+        String address = ZphoneServer.wifiAddress();
+        String statusText = address == null
+                ? getString(R.string.bridge_off)
+                : getString(R.string.bridge_status, address, DevicePrefs.getBridgePort(this));
+        TextView status = text(statusText, 13, false, 0xFF9AA3B2);
+        card.addView(status);
+
+        TextView token = text(DevicePrefs.getBridgeToken(this), 14, true, 0xFF8B7CFF);
+        token.setTextIsSelectable(true);
+        token.setPadding(0, dp(8), 0, dp(2));
+        card.addView(labelText(getString(R.string.bridge_token_label)));
+        card.addView(token);
+
+        Switch toggle = new Switch(this);
+        toggle.setText(getString(DevicePrefs.isBridgeEnabled(this)
+                ? R.string.bridge_on : R.string.bridge_off));
+        toggle.setTextColor(0xFFFFFFFF);
+        toggle.setChecked(DevicePrefs.isBridgeEnabled(this));
+        toggle.setOnCheckedChangeListener((button, on) -> {
+            DevicePrefs.setBridgeEnabled(this, on);
+            if (on) {
+                SessionKeepService.start(this);
+            } else {
+                ZphoneServer.stop();
+            }
+            feedback().onResult(on ? getString(R.string.bridge_on) : getString(R.string.bridge_off));
+            refreshSetup();
+        });
+        card.addView(pad(toggle));
+        return card;
     }
 
     private LinearLayout buildBrightnessControl() {
