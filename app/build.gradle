@@ -23,8 +23,8 @@ android {
         applicationId "com.michaelunkai.zcoderemote"
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName "1.4.0"
+        versionCode 10
+        versionName "1.4.1"
         buildConfigField "String", "DEFAULT_REMOTE_URL", "\"${defaultRemoteUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
     }
 

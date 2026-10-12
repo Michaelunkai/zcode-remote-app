@@ -75,6 +75,8 @@
     <string name="panel_section_setup">Setup &amp; permissions</string>
     <string name="setup_accessibility">Device control (accessibility): %1$s</string>
     <string name="setup_battery">Battery optimization exempt: %1$s</string>
+    <string name="setup_never_sleeping">Samsung \"Never sleeping apps\" — required for instant opens</string>
+    <string name="setup_never_sleeping_hint">In Battery: open \"Background usage limits\" → \"Never sleeping apps\" → add ZCode. Without this, Samsung force-stops the app when the screen turns off and the next open takes ~9 s.</string>
     <string name="setup_write_settings">Modify system settings: %1$s</string>
     <string name="setup_assistant">Assistant trigger — power-press / corner swipe, like Google (zero mic, zero battery): %1$s</string>
     <string name="toast_assistant_already">ZCode is already the assistant app</string>

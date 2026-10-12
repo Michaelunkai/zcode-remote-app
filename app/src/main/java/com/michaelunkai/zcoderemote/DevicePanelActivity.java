@@ -235,6 +235,16 @@ public class DevicePanelActivity extends AppCompatActivity {
                         ? "✓" : "—"),
                 this::requestBatteryWhitelist));
         grid.addView(setupButton(
+                () -> getString(R.string.setup_never_sleeping),
+                () -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_POWER_USAGE_SUMMARY));
+                        feedback().onResult(getString(R.string.setup_never_sleeping_hint));
+                    } catch (Exception e) {
+                        feedback().onResult(getString(R.string.action_failed));
+                    }
+                }));
+        grid.addView(setupButton(
                 () -> getString(R.string.setup_write_settings, Settings.System.canWrite(this) ? "✓" : "—"),
                 () -> startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.fromParts(
                         "package", getPackageName(), null)))));
