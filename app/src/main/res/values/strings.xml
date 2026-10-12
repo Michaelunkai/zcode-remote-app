@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZCode</string>
+    <string name="shortcut_set_url">Change server URL</string>
+    <string name="error_title">Connection problem</string>
+    <string name="error_generic">The ZCode remote session could not be loaded.</string>
+    <string name="btn_retry">Retry</string>
+    <string name="btn_change_url">Change URL</string>
+    <string name="settings_title">ZCode remote URL</string>
+    <string name="url_label">Session URL</string>
+    <string name="btn_save">Save &amp; Open</string>
+    <string name="btn_reset">Reset to default</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="toast_invalid_url">Invalid URL</string>
+    <string name="toast_saved">URL saved</string>
+    <string name="toast_reset">Reset to default URL</string>
+    <string name="toast_download_started">Download started</string>
+    <string name="empty_url_hint">No URL configured yet.</string>
+</resources>

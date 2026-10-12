@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_link"
+        android:shortcutId="set_url"
+        android:shortcutLongLabel="@string/shortcut_set_url"
+        android:shortcutShortLabel="@string/shortcut_set_url">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="com.michaelunkai.zcoderemote.SettingsActivity"
+            android:targetPackage="com.michaelunkai.zcoderemote" />
+    </shortcut>
+</shortcuts>
