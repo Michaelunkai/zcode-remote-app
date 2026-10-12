@@ -2,7 +2,7 @@
 
 One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs.
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.1.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -19,6 +19,10 @@ Open **ZCode** from your launcher and your remote session loads fullscreen — n
 |---|---|
 | ![Live session — the app fullscreen, task list pixelated for privacy](docs/screenshot-app.png) | ![Change server URL screen](docs/screenshot-settings.png) |
 | *Live session — the app fullscreen, task list pixelated for privacy* | *Change server URL screen* |
+
+**Works even while the phone is locked** — the session renders and stays interactive *above* the secure lockscreen (the lock itself is never dismissed). The 🔒 in the status bar below is real:
+
+![Session rendering above the active lockscreen, task list pixelated for privacy](docs/screenshot-lockscreen.png)
 
 ## 🤔 Why
 
@@ -37,6 +41,7 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 - In-page progress bar
 - Back button walks web history, then **minimizes** (never kills the session)
 - Keep-screen-on while the app is open
+- **Works above the lockscreen** — session stays visible and interactive over the secure lock (never dismisses it); the screen wakes on launch (v1.1.0)
 - Error screen with **Retry** / **Change URL** buttons when the session cannot load
 - File upload through the system file picker
 - Downloads routed through the system DownloadManager, with a "Download started" toast
@@ -56,7 +61,7 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.0.0.apk` (~2.5 MB) from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+1. Download `zcode-remote-v1.1.0.apk` (~2.5 MB) from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
 2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and permission-minimal.
 3. Open **ZCode**.
 
@@ -134,6 +139,7 @@ gradlew / gradlew.bat                       # Gradle wrapper included
 ## 🔧 Troubleshooting
 
 1. **"Connection problem" error screen** — the session URL expired or the desktop isn't reachable. Generate a fresh remote URL in the ZCode desktop app and use **Change server URL**, or pull down to retry.
+2. **"Mobile Connection Invalid" (AUTH_FAILED)** — ZCode revokes the old link every time a new remote QR/connection is generated. This is server-side, by design: grab the **latest** URL from the desktop app and use **Change server URL**.
 2. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.
 3. **WebView renderer crash on emulators** — an emulator-only artifact with software rendering; on real devices hardware rendering is used.
 4. **Downloads not starting** — check the system Download manager is enabled.

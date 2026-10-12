@@ -3,6 +3,7 @@ package com.michaelunkai.zcoderemote;
 import android.app.DownloadManager;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -48,6 +49,12 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Deliberate user requirement: the session stays visible and interactive
+            // above the secure lockscreen (the keyguard itself is never dismissed).
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }
 
         urlStore = new UrlStore(this);
         webView = findViewById(R.id.web_view);
