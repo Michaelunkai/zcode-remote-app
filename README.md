@@ -1,8 +1,8 @@
 # ZCode — your ZCode remote session, as a native app
 
-One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs.
+One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs. Instant resume, real-time progress even in the background, "Hey ZCode" voice wake-up, and full no-root control of the phone itself.
 
-[![Release](https://img.shields.io/badge/release-v1.2.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.3.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -36,6 +36,8 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 
 ## ✨ Features
 
+### Session (v1.0–v1.2)
+
 - Fullscreen WebView session — zero browser UI
 - Pull-to-refresh that never fights your scrolling — it only fires when the page **and every inner list** are at their very top; scrolling up inside a session never refreshes (v1.2.0)
 - No overscroll glow/bounce at the edges — the page feels native, not browserish
@@ -48,32 +50,63 @@ The app pins it. One tap away, always the same URL, and the phone screen stays a
 - File upload through the system file picker
 - Downloads routed through the system DownloadManager, with a "Download started" toast
 - Share a URL from any app (Android share sheet) to load it in ZCode
-- Launcher app shortcut: **Change server URL**
+- Launcher app shortcuts: **Change server URL**, **Device control**
 - Survives rotation without reloading (configChanges handled)
 - Session URL stored only in app-private storage
+
+### Instant resume & real-time progress (v1.3.0)
+
+- **Never "please refresh" again** — a keep-alive foreground service plus a renderer pinned at full priority keep the page (sessions menu, per-session progress, running tasks) fully alive while the app is minimized. Cold start ≈150 ms; returning to the app or switching session tabs lands on an already-live page in well under a second.
+- **Self-healing connection** — if the network drops or the WebView renderer is killed by the system, the app rebuilds automatically and reloads the session the moment connectivity returns (capped backoff, no spinners).
+- The keep-alive notification carries **Device panel** / **Stop** actions.
+
+### Device control — no root (v1.3.0)
+
+The **Device panel** (notification action, or long-press the launcher icon) is a native control surface for the phone itself — it keeps working even when the PC is offline:
+
+- Global navigation: Back / Home / Recents / Notifications / Quick settings / Power dialog / Split screen / Lock screen
+- Gestures: tap, long-press, swipe — anywhere on screen (accessibility gesture dispatch)
+- Text input into any focused field
+- Screenshots saved to `Pictures/Screenshots`
+- Volume, media keys, flashlight, brightness
+- App launcher (any installed app)
+- **Wake-on-LAN** — wake the PC from full power-off (set the PC NIC's MAC in the panel; on the same network it just works, and from far away you can forward a UDP port on your router to the PC's subnet broadcast and use `public-ip:port`)
+- An origin-guarded JS bridge (`window.ZcodeAndroid`) exposes the same powers to the loaded session page
+
+One-time setup lives at the bottom of the panel: **Device control (accessibility)** must be enabled — everything else (microphone, battery exemption, modify-system-settings, overlay) has direct shortcuts.
+
+### "Hey ZCode" — voice wake-up (v1.3.0)
+
+- Opt-in always-listening wake word (toggle in the device panel). A microphone foreground service keeps an on-device speech recognizer warm; saying **"hey zcode"** pops the session open instantly, including above the lockscreen (full-screen-intent fallback).
+- Battery-conscious: no wake locks, a silent low-priority notification, and it only runs when you switch it on. Turn it off any time from the panel.
+- Three more zero-battery launch paths: **Quick Settings tile "ZCode session"**, the launcher shortcut, and — if you set ZCode as your **default assistant app** (panel → Setup) — the system assistant gesture opens the session instantly.
 
 ## 📋 Requirements
 
 | Requirement | Value |
 |---|---|
 | Android | 8.0+ (API 26+) |
-| Permissions | `android.permission.INTERNET` only |
+| Core permission | `INTERNET` |
+| Optional (per feature) | `RECORD_AUDIO` (wake word), accessibility service (device control), `WRITE_SETTINGS` (brightness), notification access |
 | Analytics / tracking | None |
-| Network calls | Only loading your session URL |
+| Network calls | Loading your session URL + Wake-on-LAN UDP to the address you configure |
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.2.0.apk` (~2.5 MB) from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
-2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and permission-minimal.
+1. Download `zcode-remote-v1.3.0.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and privacy-minimal.
 3. Open **ZCode**.
+4. Optional: long-press the icon → **Device control**, and walk the setup rows at the bottom of the panel.
 
 > The release APK already has the owner's session URL embedded. If none is embedded (a build from source without `remote.properties`), the app opens the URL settings screen on first launch.
 
 ## 🚀 Usage
 
 - Open **ZCode** from the launcher — the session loads fullscreen.
-- Refresh: pull down.
-- Share a URL to **ZCode** from the Android share sheet to load it.
+- Refresh: pull down (only when everything is at the top).
+- Minimize freely — the session stays live; coming back is instant and never asks you to refresh.
+- Say **"hey zcode"** (with the wake word enabled) or use the **ZCode session** tile to jump straight back in.
+- **Device panel** (notification action or launcher shortcut) to control the phone, or wake the PC.
 
 ## 🔁 Changing the session URL
 
@@ -129,27 +162,45 @@ Without it, `assembleRelease` produces an unsigned APK.
 
 ```
 app/src/main/java/com/michaelunkai/zcoderemote/
-    MainActivity.java
-    SettingsActivity.java
-    UrlStore.java
-app/src/main/res/…                          # resources (launcher icon, layouts, themes)
-app/src/test/java/…/UrlStoreTest.java       # unit tests
+    MainActivity.java                       # session WebView, instant resume, auto-heal, JS bridge attach
+    SwipeRefreshGate.java                   # scroll-aware pull-to-refresh
+    UrlStore.java                           # URL validation + persistence
+    SettingsActivity.java                   # change server URL
+    DevicePanelActivity.java                # native device-control surface
+    DeviceActions.java                      # central action router (panel + bridge)
+    ZcodeControlAccessibilityService.java   # no-root control engine: gestures, nav, text, screenshots
+    ZcodeBridge.java                        # origin-guarded window.ZcodeAndroid JS bridge
+    SessionKeepService.java                 # keep-alive foreground service (instant resume)
+    HotwordService.java                     # "Hey ZCode" always-listening service
+    HotwordMatcher.java                     # tolerant wake-phrase matcher
+    ZcodeVoiceInteractionService/…Session*  # assistant-app integration (zero-battery launch)
+    SessionTileService.java                 # Quick Settings tile
+    SessionLauncher.java                    # reliable open-from-anywhere (+ full-screen-intent fallback)
+    WakePc.java                             # Wake-on-LAN magic packets
+    DevicePrefs.java                        # feature toggles + WoL target
+app/src/test/java/…/                        # JVM-pure unit tests (Url, WakePc, HotwordMatcher)
+app/src/main/res/…                          # resources (icons, layouts, themes, service configs)
 remote.properties.example                   # template for the embedded default URL
 gradlew / gradlew.bat                       # Gradle wrapper included
 ```
 
 ## 🔧 Troubleshooting
 
-1. **"Connection problem" error screen** — the session URL expired or the desktop isn't reachable. Generate a fresh remote URL in the ZCode desktop app and use **Change server URL**, or pull down to retry.
+1. **"Connection problem" error screen** — the session URL expired or the desktop isn't reachable. Generate a fresh remote URL in the ZCode desktop app and use **Change server URL**, or pull down to retry. The app also auto-retries when the network comes back.
 2. **"Mobile Connection Invalid" (AUTH_FAILED)** — ZCode revokes the old link every time a new remote QR/connection is generated. This is server-side, by design: grab the **latest** URL from the desktop app and use **Change server URL**.
-2. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.
-3. **WebView renderer crash on emulators** — an emulator-only artifact with software rendering; on real devices hardware rendering is used.
-4. **Downloads not starting** — check the system Download manager is enabled.
+3. **Device-control actions say "Enable Device control (accessibility) first"** — open the panel's setup section and enable **ZCode device control** in accessibility settings.
+4. **"Hey ZCode" not triggering** — check the panel toggle is on and Microphone shows ✓. The recognizer runs on-device; very noisy rooms can delay detection. Battery-saver modes may pause background mic access.
+5. **Wake-on-LAN doesn't wake the PC** — the PC's NIC (and BIOS "Wake on LAN" / "Power on by PCIe") must be enabled; verify the MAC belongs to the wired/Ethernet adapter. Same-network first; remote wake needs a router UDP forward.
+6. **Brightness needs "Modify system settings"** — one tap in the panel's setup section.
+7. **Blank dark screen behind the lock screen** — normal. The session resumes when you unlock.
+8. **WebView renderer crash on emulators** — an emulator-only artifact with software rendering; on real devices hardware rendering is used (and the app rebuilds the renderer automatically if the system ever kills it).
 
 ## 🔒 Privacy
 
 - Your session URL is stored only in app-private SharedPreferences.
-- The app makes no connections other than loading your session URL and collects nothing.
+- The app makes no connections other than loading your session URL and sending Wake-on-LAN packets to the address you configure; it collects nothing.
+- The accessibility service is passive: it acts only on commands from the panel, the session page, or you.
+- The wake-word recognizer runs on-device; no audio leaves the phone.
 
 Treat your session URL like a password — it grants access to this machine's ZCode. Never commit it (`remote.properties` is gitignored for exactly this reason).
 

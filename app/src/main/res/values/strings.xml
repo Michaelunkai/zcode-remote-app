@@ -2,18 +2,105 @@
 <resources>
     <string name="app_name">ZCode</string>
     <string name="shortcut_set_url">Change server URL</string>
+    <string name="shortcut_control_panel">Device control</string>
     <string name="error_title">Connection problem</string>
     <string name="error_generic">The ZCode remote session could not be loaded.</string>
     <string name="btn_retry">Retry</string>
     <string name="btn_change_url">Change URL</string>
-    <string name="settings_title">ZCode remote URL</string>
-    <string name="url_label">Session URL</string>
+    <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save &amp; Open</string>
     <string name="btn_reset">Reset to default</string>
-    <string name="btn_cancel">Cancel</string>
+    <string name="settings_title">ZCode remote URL</string>
+    <string name="url_label">Session URL</string>
     <string name="toast_invalid_url">Invalid URL</string>
     <string name="toast_saved">URL saved</string>
     <string name="toast_reset">Reset to default URL</string>
     <string name="toast_download_started">Download started</string>
     <string name="empty_url_hint">No URL configured yet.</string>
+
+    <!-- Keep-alive + hotword + ready notifications -->
+    <string name="channel_live_name">Live session</string>
+    <string name="channel_live_desc">Keeps the session alive for instant resume</string>
+    <string name="channel_ready_name">Session ready</string>
+    <string name="channel_ready_desc">Full-screen card when the session is triggered</string>
+    <string name="notif_live_title">ZCode session live</string>
+    <string name="notif_live_text">Real-time progress in background • synced %1$s</string>
+    <string name="notif_action_panel">Device panel</string>
+    <string name="notif_action_stop">Stop</string>
+    <string name="notif_hotword_title">\"Hey ZCode\" listening</string>
+    <string name="notif_hotword_text">Say \"hey zcode\" to open the session instantly</string>
+    <string name="notif_ready_title">ZCode session ready</string>
+    <string name="notif_ready_text">Tap to open the live session</string>
+
+    <!-- Device panel -->
+    <string name="panel_title">Device control</string>
+    <string name="panel_subtitle">Local Android control — works even when the PC is offline</string>
+    <string name="panel_close">Close</string>
+    <string name="panel_section_navigation">Navigation</string>
+    <string name="panel_back">Back</string>
+    <string name="panel_home">Home</string>
+    <string name="panel_recents">Recents</string>
+    <string name="panel_notifications">Notify</string>
+    <string name="panel_quick_settings">Quick</string>
+    <string name="panel_power">Power</string>
+    <string name="panel_lock">Lock screen</string>
+    <string name="panel_split">Split screen</string>
+    <string name="panel_section_sound">Sound &amp; media</string>
+    <string name="panel_section_tools">Capture &amp; input</string>
+    <string name="panel_screenshot">Shot</string>
+    <string name="panel_type_text">Type</string>
+    <string name="panel_launch_app">Apps</string>
+    <string name="panel_send">Send</string>
+    <string name="panel_section_brightness">Screen brightness</string>
+    <string name="panel_brightness_hint">Drag, then release to apply</string>
+    <string name="panel_result_hint">Status messages appear here</string>
+
+    <!-- Wake-on-LAN -->
+    <string name="panel_section_wake">Wake the PC (Wake-on-LAN)</string>
+    <string name="wol_mac_label">PC network card MAC</string>
+    <string name="wol_target_label">Target (broadcast or host:port)</string>
+    <string name="wol_target_hint">255.255.255.255:9</string>
+    <string name="wol_button">Wake PC</string>
+    <string name="wol_note">Wakes the PC from full power-off when the phone is on the same network. Away from home: forward a UDP port on your router to the PC subnet broadcast, then use your public IP:port.</string>
+    <string name="wol_need_mac">Set the PC MAC address first</string>
+    <string name="wol_sent">Wake packet sent ×%1$d</string>
+    <string name="wol_failed">Wake failed: %1$s</string>
+    <string name="wol_sending">Sending wake packet…</string>
+
+    <!-- Always-live toggles -->
+    <string name="panel_section_live">Always live</string>
+    <string name="panel_keep_alive">Keep session live (instant resume, real-time progress)</string>
+    <string name="panel_hotword">\"Hey ZCode\" wake word</string>
+    <string name="toast_keep_alive_on">Session stays live in background</string>
+    <string name="toast_keep_alive_off">Keep-alive stopped</string>
+    <string name="toast_hotword_on">Listening for \"Hey ZCode\"</string>
+    <string name="toast_hotword_off">Wake word off</string>
+    <string name="toast_hotword_needs_mic">Microphone permission required</string>
+
+    <!-- Setup -->
+    <string name="panel_section_setup">Setup &amp; permissions</string>
+    <string name="setup_accessibility">Device control (accessibility): %1$s</string>
+    <string name="setup_mic">Microphone: %1$s</string>
+    <string name="setup_battery">Battery optimization exempt: %1$s</string>
+    <string name="setup_write_settings">Modify system settings: %1$s</string>
+    <string name="setup_assistant">Default assistant (zero-battery launch)</string>
+    <string name="setup_overlay">Overlay permission (instant launch)</string>
+    <string name="setup_notifications">Notifications: %1$s</string>
+
+    <!-- Action results -->
+    <string name="action_ok">Done</string>
+    <string name="action_failed">Action failed</string>
+    <string name="action_need_accessibility">Enable Device control (accessibility) first</string>
+    <string name="action_no_editable">No focused text field</string>
+    <string name="action_screenshot_unsupported">Screenshots need Android 11+</string>
+    <string name="action_screenshot_saved">Saved: %1$s</string>
+    <string name="action_no_torch">No flash unit</string>
+    <string name="action_need_write_settings">Grant Modify system settings first</string>
+    <string name="action_app_not_found">App not found</string>
+    <string name="bridge_rejected">Blocked: page is not the session host</string>
+
+    <!-- Services -->
+    <string name="accessibility_service_label">ZCode device control</string>
+    <string name="accessibility_service_desc">Lets ZCode control this device on command: navigation, gestures, text input and screenshots. Passive until a command arrives.</string>
+    <string name="tile_label">ZCode session</string>
 </resources>

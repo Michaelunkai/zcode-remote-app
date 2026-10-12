@@ -11,4 +11,15 @@
             android:targetClass="com.michaelunkai.zcoderemote.SettingsActivity"
             android:targetPackage="com.michaelunkai.zcoderemote" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_link"
+        android:shortcutId="control_panel"
+        android:shortcutLongLabel="@string/shortcut_control_panel"
+        android:shortcutShortLabel="@string/shortcut_control_panel">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="com.michaelunkai.zcoderemote.DevicePanelActivity"
+            android:targetPackage="com.michaelunkai.zcoderemote" />
+    </shortcut>
 </shortcuts>

@@ -2,17 +2,23 @@ package com.michaelunkai.zcoderemote;
 
 import android.app.DownloadManager;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -82,6 +88,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean mainFrameError;
     private volatile boolean innerScrolledUp = false;
     private long lastScrollProbeAt = 0L;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable autoRetry = this::autoRetryOnce;
+    private int retryAttempt = 0;
 
     /** JS bridge: the injected scroll watcher reports inner-container state. */
     private class ScrollWatcher {
@@ -116,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
 
         configureWebViewSettings();
         configureWebViewClients();
+        registerNetworkHeal();
 
         swipeRefresh.setGate(() -> innerScrolledUp);
 
@@ -159,8 +169,15 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setDefaultTextEncodingName("utf-8");
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // Live progress guarantee: the renderer keeps full priority even while the
+        // app is backgrounded, so the page (sessions menu, running tasks) never
+        // freezes or dies — returning lands on an already-updated page instantly.
+        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.addJavascriptInterface(scrollWatcher, "AndroidScroll");
+        webView.addJavascriptInterface(new ZcodeBridge(this, () ->
+                webView == null ? null : webView.getUrl()), "ZcodeAndroid");
     }
 
     private void configureWebViewClients() {
@@ -205,8 +222,18 @@ public class MainActivity extends AppCompatActivity {
                 if (mainFrameError) {
                     mainFrameError = false;
                 } else {
+                    retryAttempt = 0;
+                    mainHandler.removeCallbacks(autoRetry);
                     hideError();
                 }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // The renderer was killed (OOM / system pressure). Rebuild it in
+                // place and restore the session instead of taking the app down.
+                rebuildWebView();
+                return true;
             }
         });
 
@@ -333,6 +360,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Keep the session page alive (and the hotword listener armed) as long as
+        // the user wants them: returning to the app must land on a live page in
+        // well under a second, with progress already up to date.
+        SessionKeepService.start(this);
+        HotwordService.startIfEnabled(this);
         String effective = urlStore.get();
         if (effective.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
@@ -364,8 +396,69 @@ public class MainActivity extends AppCompatActivity {
         }
         lastLoadedUrl = effective;
         mainFrameError = false;
+        mainHandler.removeCallbacks(autoRetry);
         hideError();
         webView.loadUrl(effective);
+    }
+
+    /** Rebuilds the WebView after its renderer died, restoring the live session. */
+    private void rebuildWebView() {
+        try {
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            int index = parent.indexOfChild(webView);
+            parent.removeView(webView);
+            webView.destroy();
+            webView = new WebView(this);
+            webView.setId(R.id.web_view);
+            configureWebViewSettings();
+            configureWebViewClients();
+            ViewGroup.LayoutParams params = new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            parent.addView(webView, index, params);
+            mainFrameError = false;
+            loadEffectiveUrl();
+        } catch (Exception e) {
+            // Last resort: recreate the whole activity around a fresh WebView.
+            recreate();
+        }
+    }
+
+    /** When the network comes back, heal a dead main frame immediately. */
+    private void registerNetworkHeal() {
+        ConnectivityManager connectivity =
+                (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (connectivity == null) {
+            return;
+        }
+        try {
+            connectivity.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    mainHandler.postDelayed(() -> {
+                        if (mainFrameError && !isFinishing()) {
+                            retryAttempt = 0;
+                            loadEffectiveUrl();
+                        }
+                    }, 400L);
+                }
+            });
+        } catch (Exception e) {
+            // Callbacks unavailable; the auto-retry backoff still covers recovery.
+        }
+    }
+
+    /** Capped backoff while the error overlay is showing: 1s, 2s, 4s, 8s, 15s, 15s… */
+    private void scheduleAutoRetry() {
+        mainHandler.removeCallbacks(autoRetry);
+        long delayMs = Math.min(15000L, 1000L << Math.min(retryAttempt, 4));
+        retryAttempt++;
+        mainHandler.postDelayed(autoRetry, delayMs);
+    }
+
+    private void autoRetryOnce() {
+        if (mainFrameError && !isFinishing()) {
+            loadEffectiveUrl();
+        }
     }
 
     private void showError(String message) {
@@ -373,6 +466,7 @@ public class MainActivity extends AppCompatActivity {
         errorOverlay.setVisibility(View.VISIBLE);
         progressBar.setVisibility(View.GONE);
         swipeRefresh.setRefreshing(false);
+        scheduleAutoRetry();
     }
 
     private void hideError() {
