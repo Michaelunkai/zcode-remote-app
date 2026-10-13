@@ -180,13 +180,21 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        maybeOpenDevicePanel(getIntent());
+        maybeHandleLaunchExtras(getIntent());
     }
 
-    /** `am start ... --ez open_panel true` — deterministic adb entry to the panel. */
-    private void maybeOpenDevicePanel(Intent intent) {
+    /**
+     * Deterministic adb entries: `--ez open_panel true` opens the device
+     * panel; `--ez open_local_agent true` switches to the on-device AI view
+     * (loopback model server) without ever touching the stored session URL.
+     */
+    private void maybeHandleLaunchExtras(Intent intent) {
         if (intent != null && intent.getBooleanExtra("open_panel", false)) {
             startActivity(new Intent(this, DevicePanelActivity.class));
+        }
+        if (intent != null && intent.getBooleanExtra("open_local_agent", false)) {
+            retryAttempt = 0;
+            enterLocalAgent();
         }
     }
 
@@ -388,7 +396,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        maybeOpenDevicePanel(intent);
+        maybeHandleLaunchExtras(intent);
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
             return;
         }
