@@ -1,0 +1,11 @@
+# ZCode on-device agent harness — config template.
+# Copy to config.json (same directory) and fill in the token.
+# NEVER commit the real config.json or token.
+{
+  "model_base": "http://127.0.0.1:8080",
+  "zphone_base": "http://127.0.0.1:8790",
+  "zphone_token": "<paste-the-token-from-the-app-device-panel>",
+  "confirm_destructive": false,
+  "max_steps": 8,
+  "transcript_dir": "transcripts"
+}
