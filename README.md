@@ -1,8 +1,8 @@
 # ZCode — your ZCode remote session, as a native app
 
-One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs. Instant resume, real-time progress even in the background, "Hey ZCode" voice wake-up, and full no-root control of the phone itself.
+One tap from your launcher to your ZCode remote-control session, fullscreen — no browser, no address bar, no lost tabs. Instant resume, real-time progress even in the background, full no-root control of the phone itself — and when the PC is off, the app stays functional in **offline mode** with an **on-device AI agent** that runs the model on the phone itself.
 
-[![Release](https://img.shields.io/badge/release-v1.4.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
+[![Release](https://img.shields.io/badge/release-v1.6.0-blue)](https://github.com/Michaelunkai/zcode-remote-app/releases)
 [![Min Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 ![Package](https://img.shields.io/badge/package-com.michaelunkai.zcoderemote-9cf)
@@ -62,6 +62,22 @@ The app runs a token-authenticated command endpoint on the local network so the 
 - PC side: `pc-helper/zphone.py` (`python zphone.py status`, `zphone song "query" youtube`, `zphone open youtube`, …). Configure once with `zphone set <phone-ip> 8790 <token>`.
 - Everything executes locally through the accessibility engine — no adb, no root; works whenever the PC and phone can reach each other (home network, or any routable address such as a VPN IP).
 
+### Offline mode + on-device AI (v1.6.0)
+
+**The PC-off problem is gone.** When the session URL is unreachable (PC off, dead link, no network), the app no longer shows a dead error page — it enters **offline mode** and stays useful:
+
+- Clear offline screen with the connection state and four working entries: **Retry**, **Open device panel** (full phone control), **Open local AI agent**, **Change URL**
+- **Local AI agent** — loads the on-device model server (`127.0.0.1:8080`, loopback-only cleartext) in the WebView: with the PC off you still chat with an AI that runs on the phone's own CPU
+- A live probe shows a **"● PC is back"** chip the moment the session becomes reachable again — one tap returns to the live session (session mode keeps its own auto-retry healing)
+- Rotation-invalidated links ("Mobile Connection Invalid" / AUTH_FAILED) are detected and answered with update-the-URL guidance instead of a useless retry loop
+
+**The AI runs on the phone itself** — see [`ondevice/`](ondevice/):
+
+- `ondevice/model-runtime/` — Termux + llama.cpp installer; serves an OpenAI-compatible API on `127.0.0.1:8080` from a quantized model (Qwen2.5-3B-Instruct Q4_K_M, ~2 GB RAM) on the Snapdragon 8 Elite, fully offline
+- `ondevice/agent-harness/` — the on-phone agent loop: goal → model tool-calls → real device actions (open apps, tap, navigate, screenshots…) via the app's ZphoneServer, with guarded destructive actions and JSONL transcripts; 11 PC-runnable tests
+
+The desktop-side helper for the same bridge lives in `pc-helper/zphone.py`.
+
 ### Instant resume & real-time progress (v1.3.0)
 
 - **Never "please refresh" again** — a keep-alive foreground service plus a renderer pinned at full priority keep the page (sessions menu, per-session progress, running tasks) fully alive while the app is minimized. Cold start ≈150 ms; returning to the app or switching session tabs lands on an already-live page in well under a second.
@@ -98,7 +114,7 @@ The panel also opens deterministically for automation: `adb shell am start -n co
 
 ## 📥 Install
 
-1. Download `zcode-remote-v1.4.0.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
+1. Download `zcode-remote-v1.6.0.apk` from the [latest release](https://github.com/Michaelunkai/zcode-remote-app/releases/latest).
 2. Android will ask you to allow installs from your browser/file manager (**Settings > Apps > Special access > Install unknown apps**). This APK is self-signed, sideloaded, and privacy-minimal.
 3. Open **ZCode**.
 4. Optional: long-press the icon → **Device control**, and walk the setup rows at the bottom of the panel.

@@ -27,3 +27,7 @@ Thumbs.db
 
 hs_err_pid*.log
 replay_pid*.log
+
+# On-device harness secrets & local transcripts (never commit)
+ondevice/agent-harness/config.json
+ondevice/agent-harness/transcripts/
