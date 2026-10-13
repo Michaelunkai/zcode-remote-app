@@ -34,6 +34,10 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +45,9 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
     private static final Pattern HTTP_URL_PATTERN = Pattern.compile("https?://\\S+");
+
+    /** The on-device model server (offline-mode AI agent). Loopback only. */
+    private static final String LOCAL_AGENT_URL = "http://127.0.0.1:8080";
 
     /**
      * Persistent per-page hook: reports whenever any scrollable container moves
@@ -83,9 +90,16 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private View errorOverlay;
     private TextView errorMessage;
+    private TextView offlineTitle;
+    private TextView returnNotice;
+    private Button btnBackSession;
     private ValueCallback<Uri[]> fileUploadCallback;
     private String lastLoadedUrl = null;
     private boolean mainFrameError;
+    private boolean localAgentMode = false;
+    private ConnectionErrorKind lastErrorKind = ConnectionErrorKind.OTHER;
+    private boolean pcProbeActive = false;
+    private ExecutorService pcProbeExecutor;
     private volatile boolean innerScrolledUp = false;
     private long lastScrollProbeAt = 0L;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -120,8 +134,13 @@ public class MainActivity extends AppCompatActivity {
         progressBar = findViewById(R.id.progress_bar);
         errorOverlay = findViewById(R.id.error_overlay);
         errorMessage = findViewById(R.id.error_message);
+        offlineTitle = findViewById(R.id.offline_title);
+        returnNotice = findViewById(R.id.return_notice);
+        btnBackSession = findViewById(R.id.btn_back_session);
         Button btnRetry = findViewById(R.id.btn_retry);
         Button btnChangeUrl = findViewById(R.id.btn_change_url);
+        Button btnDevicePanel = findViewById(R.id.btn_device_panel);
+        Button btnLocalAgent = findViewById(R.id.btn_local_agent);
 
         configureWebViewSettings();
         configureWebViewClients();
@@ -134,13 +153,21 @@ public class MainActivity extends AppCompatActivity {
                 webView.reload();
             } else {
                 swipeRefresh.setRefreshing(false);
-                loadEffectiveUrl();
+                retryCurrentTarget();
             }
         });
 
-        btnRetry.setOnClickListener(v -> loadEffectiveUrl());
+        btnRetry.setOnClickListener(v -> retryCurrentTarget());
         btnChangeUrl.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
+        btnDevicePanel.setOnClickListener(v ->
+                startActivity(new Intent(MainActivity.this, DevicePanelActivity.class)));
+        btnLocalAgent.setOnClickListener(v -> {
+            retryAttempt = 0;
+            enterLocalAgent();
+        });
+        btnBackSession.setOnClickListener(v -> exitLocalAgent());
+        returnNotice.setOnClickListener(v -> exitLocalAgent());
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -215,6 +242,8 @@ public class MainActivity extends AppCompatActivity {
                     // failure and let onPageFinished decide whether to hide.
                     mainFrameError = true;
                     CharSequence description = error.getDescription();
+                    lastErrorKind = ConnectionErrorKind.classify(
+                            description == null ? null : description.toString());
                     String message = getString(R.string.error_generic);
                     if (description != null && description.length() > 0) {
                         message = message + "\n" + description;
@@ -234,6 +263,12 @@ public class MainActivity extends AppCompatActivity {
                     retryAttempt = 0;
                     mainHandler.removeCallbacks(autoRetry);
                     hideError();
+                    if (!localAgentMode) {
+                        // A rotation-invalidated link renders as a loaded page
+                        // ("Mobile Connection Invalid"/AUTH_FAILED), not an error:
+                        // surface the update-URL guidance instead of a blank retry.
+                        scanForInvalidLink(view);
+                    }
                 }
             }
 
@@ -372,16 +407,26 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         // Keep the session page alive as long as the user wants it: returning to
         // the app must land on a live page in well under a second, with progress
-        // already up to date.
+        // already up to date. Local-agent mode is left untouched so returning
+        // from the panel never kicks the user out of the offline view.
         SessionKeepService.start(this);
         String effective = urlStore.get();
         if (effective.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
             return;
         }
-        if (!effective.equals(lastLoadedUrl)) {
+        if (localAgentMode) {
+            startPcProbe();
+        } else if (!effective.equals(lastLoadedUrl)) {
             loadEffectiveUrl();
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Foreground-only polling: zero battery cost while backgrounded.
+        stopPcProbe();
     }
 
     @Override
@@ -403,11 +448,113 @@ public class MainActivity extends AppCompatActivity {
         if (effective.isEmpty()) {
             return;
         }
+        localAgentMode = false;
+        lastErrorKind = ConnectionErrorKind.OTHER;
+        returnNotice.setVisibility(View.GONE);
         lastLoadedUrl = effective;
         mainFrameError = false;
         mainHandler.removeCallbacks(autoRetry);
         hideError();
         webView.loadUrl(effective);
+    }
+
+    /**
+     * Enters offline-capable local mode: the WebView shows the on-device AI
+     * agent (loopback model server). Works with the PC on or off; the probe
+     * chip tells the user the moment the PC session is reachable again.
+     */
+    private void enterLocalAgent() {
+        localAgentMode = true;
+        lastErrorKind = ConnectionErrorKind.OTHER;
+        lastLoadedUrl = null;
+        mainFrameError = false;
+        mainHandler.removeCallbacks(autoRetry);
+        hideError();
+        webView.loadUrl(LOCAL_AGENT_URL);
+        // Fresh back list: Back from the agent minimizes instead of landing on
+        // the dead session page; exitLocalAgent reloads the session explicitly.
+        webView.clearHistory();
+        startPcProbe();
+    }
+
+    /** Returns to the PC session (Back button or the PC-is-back notice). */
+    private void exitLocalAgent() {
+        stopPcProbe();
+        loadEffectiveUrl();
+    }
+
+    /** Retries whichever target the user is on: the local agent or the PC. */
+    private void retryCurrentTarget() {
+        if (localAgentMode) {
+            enterLocalAgent();
+        } else {
+            loadEffectiveUrl();
+        }
+    }
+
+    /** While in local mode, watch for the PC coming back (20 s, foreground only). */
+    private void startPcProbe() {
+        if (!localAgentMode || pcProbeActive || urlStore.get().isEmpty()) {
+            return;
+        }
+        pcProbeActive = true;
+        mainHandler.post(pcProbeLoop);
+    }
+
+    private void stopPcProbe() {
+        pcProbeActive = false;
+        mainHandler.removeCallbacks(pcProbeLoop);
+        returnNotice.setVisibility(View.GONE);
+    }
+
+    private final Runnable pcProbeLoop = new Runnable() {
+        @Override
+        public void run() {
+            if (!pcProbeActive || !localAgentMode || isFinishing()) {
+                return;
+            }
+            final String target = urlStore.get();
+            if (pcProbeExecutor == null) {
+                pcProbeExecutor = Executors.newSingleThreadExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "pc-probe");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+            }
+            pcProbeExecutor.execute(() -> {
+                final boolean reachable = isHostReachable(target);
+                mainHandler.post(() -> {
+                    if (pcProbeActive && localAgentMode && !isFinishing()) {
+                        returnNotice.setVisibility(reachable ? View.VISIBLE : View.GONE);
+                        if (pcProbeActive && localAgentMode && !isFinishing()) {
+                            mainHandler.postDelayed(pcProbeLoop, 20000L);
+                        }
+                    }
+                });
+            });
+        }
+    };
+
+    /** HEAD request with a tight timeout; true on any real HTTP response. */
+    private static boolean isHostReachable(String target) {
+        if (target == null || target.isEmpty()) {
+            return false;
+        }
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(target).openConnection();
+            connection.setRequestMethod("HEAD");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(4000);
+            connection.setInstanceFollowRedirects(true);
+            return connection.getResponseCode() > 0;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     /** Rebuilds the WebView after its renderer died, restoring the live session. */
@@ -446,7 +593,7 @@ public class MainActivity extends AppCompatActivity {
                     mainHandler.postDelayed(() -> {
                         if (mainFrameError && !isFinishing()) {
                             retryAttempt = 0;
-                            loadEffectiveUrl();
+                            retryCurrentTarget();
                         }
                     }, 400L);
                 }
@@ -466,16 +613,55 @@ public class MainActivity extends AppCompatActivity {
 
     private void autoRetryOnce() {
         if (mainFrameError && !isFinishing()) {
-            loadEffectiveUrl();
+            retryCurrentTarget();
         }
     }
 
     private void showError(String message) {
-        errorMessage.setText(message);
+        boolean offline = lastErrorKind == ConnectionErrorKind.UNREACHABLE;
+        offlineTitle.setText(localAgentMode
+                ? R.string.local_agent_down_title
+                : (offline ? R.string.offline_title : R.string.error_title));
+        offlineTitle.setVisibility(
+                offline || localAgentMode ? View.VISIBLE : View.GONE);
+        errorMessage.setText(localAgentMode
+                ? getString(R.string.local_agent_down_hint) + "\n\n" + message
+                : (offline ? getString(R.string.offline_hint) + "\n\n" + message : message));
+        btnBackSession.setVisibility(localAgentMode ? View.VISIBLE : View.GONE);
         errorOverlay.setVisibility(View.VISIBLE);
         progressBar.setVisibility(View.GONE);
         swipeRefresh.setRefreshing(false);
         scheduleAutoRetry();
+    }
+
+    /**
+     * The PC rotated the remote link: the page loads fine but the session is
+     * dead ("Mobile Connection Invalid"/AUTH_FAILED). Retrying cannot fix it —
+     * stop the retry loop and point the user at Change URL instead.
+     */
+    private void showInvalidLink() {
+        mainHandler.removeCallbacks(autoRetry);
+        offlineTitle.setVisibility(View.VISIBLE);
+        offlineTitle.setText(R.string.invalid_link_title);
+        errorMessage.setText(getString(R.string.invalid_link_hint));
+        btnBackSession.setVisibility(View.GONE);
+        errorOverlay.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        swipeRefresh.setRefreshing(false);
+    }
+
+    /** One-shot scan of the loaded session page for rotation-invalid markers. */
+    private void scanForInvalidLink(WebView view) {
+        view.evaluateJavascript(
+                "(function(){var t=(document.body&&document.body.innerText)||'';"
+                + "return (t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)"
+                + "?'true':'false';})()",
+                value -> {
+                    if (value != null && value.contains("true") && !mainFrameError
+                            && !localAgentMode && !isFinishing()) {
+                        showInvalidLink();
+                    }
+                });
     }
 
     private void hideError() {

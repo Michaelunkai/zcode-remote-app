@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: replaces the release network security config so local
+     instrumentation servers (e.g. http://10.0.2.2:<port>) can be loaded in
+     the WebView during testing. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

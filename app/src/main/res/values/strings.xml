@@ -7,6 +7,16 @@
     <string name="error_generic">The ZCode remote session could not be loaded.</string>
     <string name="btn_retry">Retry</string>
     <string name="btn_change_url">Change URL</string>
+    <string name="offline_title">Offline mode — PC unreachable</string>
+    <string name="offline_hint">The app stays functional: control this device or use the on-device AI agent.</string>
+    <string name="btn_device_panel">Open device panel</string>
+    <string name="btn_local_agent">Open local AI agent</string>
+    <string name="btn_back_session">Back to PC session</string>
+    <string name="local_agent_down_title">Local AI agent not running</string>
+    <string name="local_agent_down_hint">Start the on-device model server on this phone (Termux: bash ~/ondevice/start-model-server.sh — see ondevice/model-runtime in the repo), then Retry.</string>
+    <string name="invalid_link_title">Session link invalid</string>
+    <string name="invalid_link_hint">The PC rotated the remote link, so this one is no longer valid. Change URL to the latest link from the desktop.</string>
+    <string name="return_notice">● PC is back — tap to return to the session</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save &amp; Open</string>
     <string name="btn_reset">Reset to default</string>
@@ -101,6 +111,7 @@
     <string name="action_need_write_settings">Grant Modify system settings first</string>
     <string name="action_app_not_found">App not found</string>
     <string name="action_no_match">No on-screen match for: %1$s</string>
+    <string name="action_playing">Playing</string>
     <string name="bridge_rejected">Blocked: page is not the session host</string>
 
     <!-- Services -->
