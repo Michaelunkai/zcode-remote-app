@@ -135,6 +135,9 @@ public class ZphoneServer {
                 response = statusJson(context);
             } else if ("/exec".equals(path) && "POST".equals(method)) {
                 response = exec(context, body.toString());
+            } else if ("/shot.png".equals(path)) {
+                serveScreenshot(context, socket);
+                return;
             } else {
                 response = "{\"status\":\"error\",\"message\":\"not found\"}";
             }
@@ -149,6 +152,51 @@ public class ZphoneServer {
             socket.close();
         } catch (Exception e) {
             Log.w(TAG, "request error", e);
+            try {
+                socket.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /** Streams a fresh screenshot as PNG (agent can actually see the phone). */
+    private static void serveScreenshot(Context context, Socket socket) {
+        try {
+            ZcodeControlAccessibilityService service = ZcodeControlAccessibilityService.get();
+            if (service == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                byte[] payload = "{\"status\":\"error\"}".getBytes(StandardCharsets.UTF_8);
+                socket.getOutputStream().write(("HTTP/1.1 503 Service Unavailable\r\n"
+                        + "Content-Length: " + payload.length + "\r\n"
+                        + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                socket.getOutputStream().write(payload);
+                socket.close();
+                return;
+            }
+            CountDownLatch latch = new CountDownLatch(1);
+            final byte[][] png = {null};
+            service.capturePng(pngBytes -> {
+                png[0] = pngBytes;
+                latch.countDown();
+            });
+            latch.await(8, TimeUnit.SECONDS);
+            OutputStream out = socket.getOutputStream();
+            if (png[0] == null) {
+                byte[] payload = "{\"status\":\"error\"}".getBytes(StandardCharsets.UTF_8);
+                out.write(("HTTP/1.1 500 Internal Server Error\r\n"
+                        + "Content-Length: " + payload.length + "\r\n"
+                        + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(payload);
+            } else {
+                out.write(("HTTP/1.1 200 OK\r\n"
+                        + "Content-Type: image/png\r\n"
+                        + "Content-Length: " + png[0].length + "\r\n"
+                        + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(png[0]);
+            }
+            out.flush();
+            socket.close();
+        } catch (Exception e) {
+            Log.w(TAG, "screenshot error", e);
             try {
                 socket.close();
             } catch (Exception ignored) {
@@ -287,9 +335,9 @@ public class ZphoneServer {
                 latch.countDown();
             }
         });
-        MAIN.postDelayed(latch::countDown, 11500L);
+        MAIN.postDelayed(latch::countDown, 19500L);
         try {
-            latch.await(12, TimeUnit.SECONDS);
+            latch.await(20, TimeUnit.SECONDS);
         } catch (InterruptedException ignored) {
         }
         return result[0];

@@ -34,7 +34,7 @@ import urllib.request
 
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".zphone.json")
 PORT = 8790
-TIMEOUT = 15
+TIMEOUT = 25
 
 
 def load_config():
@@ -121,6 +121,22 @@ def main():
     body = None
     path = "/exec"
 
+    if action == "shot":
+        # save a live screenshot to a local file so the agent can see the phone
+        out_file = args[1] if len(args) > 1 else os.path.join(os.path.expanduser("~"), "zphone-shot.png")
+        host = config.get("host")
+        if not host:
+            print("bridge not found; run: zphone set <host> 8790 <token>")
+            sys.exit(2)
+        url = f"http://{host}:{PORT}/shot.png"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = response.read()
+        with open(out_file, "wb") as handle:
+            handle.write(data)
+        print(f"saved {len(data)} bytes -> {out_file}")
+        return
     if action == "discover":
         host, status = discover(token)
         if not host:

@@ -112,74 +112,164 @@ public final class DeviceActions {
         });
     }
 
+    /** Aliases map a spoken name to a preferred package + a label hint. */
+    private static final java.util.Map<String, String[]> APP_ALIASES = java.util.Map.of(
+            "youtube", new String[]{"com.google.android.youtube", "youtube"},
+            "ytmusic", new String[]{"com.google.android.apps.youtube.music", "yt music"},
+            "yt music", new String[]{"com.google.android.apps.youtube.music", "yt music"},
+            "music", new String[]{"com.google.android.apps.youtube.music", "music"},
+            "spotify", new String[]{"com.spotify.music", "spotify"},
+            "gmail", new String[]{"com.google.android.gm", "gmail"},
+            "whatsapp", new String[]{"com.whatsapp", "whatsapp"},
+            "phone", new String[]{"com.samsung.android.dialer", "phone"},
+            "messages", new String[]{"com.samsung.android.messaging", "messages"});
+
+    private static boolean isLaunchable(Context context, String pkg) {
+        return pkg != null && context.getPackageManager().getLaunchIntentForPackage(pkg) != null;
+    }
+
+    /**
+     * Resolves a name/alias/package to an INSTALLED launcher package. ReVanced
+     * forks replace stock packages on this device, so aliases never trust a
+     * package blindly: the alias is a hint, and among multiple matches the
+     * label hint (e.g. "yt music") and mainstream-fork package names decide.
+     */
+    public static String resolveLauncherPackage(Context context, String nameOrPackage) {
+        if (nameOrPackage == null) {
+            return null;
+        }
+        String needle = nameOrPackage.trim().toLowerCase(Locale.ROOT);
+        String[] alias = APP_ALIASES.get(needle);
+        String aliasPkg = alias == null ? null : alias[0];
+        String labelHint = alias == null ? needle : alias[1];
+        if (aliasPkg != null && isLaunchable(context, aliasPkg)) {
+            return aliasPkg;
+        }
+        Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        java.util.List<android.content.pm.ResolveInfo> launchers =
+                context.getPackageManager().queryIntentActivities(main, 0);
+        String flatNeedle = needle.replaceAll("[^a-z0-9]", "");
+        String flatAlias = aliasPkg == null ? "" : aliasPkg.replaceAll("[^a-z0-9]", "");
+        String best = null;
+        int bestScore = -1;
+        for (android.content.pm.ResolveInfo info : launchers) {
+            String pkg = info.activityInfo.packageName;
+            String label = String.valueOf(info.loadLabel(context.getPackageManager()))
+                    .toLowerCase(Locale.ROOT);
+            String flatPkg = pkg.replaceAll("[^a-z0-9]", "");
+            String flatLabel = label.replaceAll("[^a-z0-9]", "");
+            boolean exact = pkg.equalsIgnoreCase(needle) || label.equals(needle);
+            boolean contains = label.contains(needle) || pkg.contains(needle)
+                    || flatLabel.contains(flatNeedle) || flatPkg.contains(flatNeedle)
+                    || (flatNeedle.isEmpty() ? false : flatPkg.contains(flatNeedle));
+            boolean aliasMatch = flatAlias.length() >= 6
+                    && (flatPkg.contains(flatAlias) || flatLabel.contains(flatAlias))
+                    && (label.contains(labelHint) || flatLabel.contains(
+                        labelHint.replaceAll("[^a-z0-9]", "")));
+            if (!exact && !contains && !aliasMatch) {
+                continue;
+            }
+            int score = exact ? 100 : 0;
+            String flatLabelText = label.replaceAll("[^a-z0-9]", "");
+            if (label.contains(labelHint)) {
+                score += 8;
+            }
+            if (flatLabelText.contains(labelHint.replaceAll("[^a-z0-9]", ""))) {
+                score += 6;
+            }
+            if (pkg.contains("revanced")) {
+                score += 3;
+            }
+            if (pkg.contains("rvx")) {
+                score += 2;
+            }
+            if (pkg.contains("anddea")) {
+                score += 1;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = pkg;
+            }
+        }
+        return best;
+    }
+
     /** Launches an app by name or package: "youtube" matches label or package id. */
     public static void launchAppByName(Context context, String nameOrPackage, Callback callback) {
         run(context, callback, () -> {
-            String needle = nameOrPackage.trim().toLowerCase(Locale.ROOT);
-            Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-            for (android.content.pm.ResolveInfo info
-                    : context.getPackageManager().queryIntentActivities(main, 0)) {
-                String pkg = info.activityInfo.packageName;
-                String label = String.valueOf(info.loadLabel(context.getPackageManager()))
-                        .toLowerCase(Locale.ROOT);
-                if (pkg.equals(needle)
-                        || pkg.endsWith("." + needle)
-                        || pkg.contains("." + needle + ".")
-                        || label.equals(needle)
-                        || label.contains(needle)) {
-                    String launchPkg = pkg;
-                    MAIN.post(() -> launchApp(context, launchPkg, callback));
-                    return;
-                }
+            String resolved = resolveLauncherPackage(context, nameOrPackage);
+            if (resolved == null) {
+                callback.onResult(context.getString(R.string.action_app_not_found));
+                return;
             }
-            callback.onResult(context.getString(R.string.action_app_not_found));
+            String launchPkg = resolved;
+            MAIN.post(() -> launchApp(context, launchPkg, callback));
         });
     }
 
     /**
-     * Plays/searches media in a specific app: wakes the screen, opens the app's
-     * search deep link, then clicks the first result node containing the query.
-     * app: youtube | ytmusic | spotify (default youtube).
+     * Plays/searches media in a specific app: wakes the screen, launches the
+     * app, then immediately drives it — Search control, inject query, click
+     * the matching result, confirm playback. No deep links: nothing ever
+     * opens in a browser and the automation plan is ready before the app
+     * finishes loading (no dead wait).
      */
     public static void mediaSearch(Context context, String app, String query, Callback callback) {
         run(context, callback, () -> {
-            String q = android.net.Uri.encode(query);
-            String url;
-            String pkg;
-            switch (app == null ? "" : app.toLowerCase(Locale.ROOT)) {
-                case "spotify":
-                    url = "spotify:search:" + query;
-                    pkg = "com.spotify.music";
-                    break;
-                case "ytmusic":
-                case "music":
-                    url = "https://music.youtube.com/search?q=" + q;
-                    pkg = "com.google.android.apps.youtube.music";
-                    break;
-                default:
-                    url = "https://www.youtube.com/results?search_query=" + q;
-                    pkg = "com.google.android.youtube";
-                    break;
-            }
+            String nameOrPackage = app == null || app.trim().isEmpty() ? "youtube music" : app;
             if (ZcodeControlAccessibilityService.get() == null) {
                 callback.onResult(context.getString(R.string.action_need_accessibility));
                 return;
             }
-            ZcodeControlAccessibilityService.wakeScreenIfOff(context);
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(intent);
-            } catch (Exception e) {
+            // Resolve BEFORE launching: unknown app fails fast with nothing opened.
+            String pkg = resolveLauncherPackage(context, nameOrPackage);
+            if (pkg == null) {
                 callback.onResult(context.getString(R.string.action_app_not_found));
                 return;
             }
-            // Let the app render its results, then click the matching node.
-            ZcodeControlAccessibilityService.get().mainHandler().postDelayed(() -> {
-                if (ZcodeControlAccessibilityService.isReady()) {
-                    ZcodeControlAccessibilityService.get().clickNodeContaining(query, callback);
-                }
-            }, 3500L);
+            ZcodeControlAccessibilityService.wakeScreenIfOff(context);
+            String q = android.net.Uri.encode(query);
+            String url;
+            if (pkg.contains("youtube.music")) {
+                url = "https://music.youtube.com/search?q=" + q;
+            } else {
+                url = "https://www.youtube.com/results?search_query=" + q;
+            }
+            boolean opened;
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                intent.setPackage(pkg);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+                opened = true;
+            } catch (Exception e) {
+                opened = false; // app has no in-app deep link; use the search flow
+            }
+            if (opened) {
+                // Fast path: results render in-app in ~1-2 s; click Play, confirm.
+                ZcodeControlAccessibilityService.get().mainHandler().postDelayed(() -> {
+                    if (ZcodeControlAccessibilityService.isReady()) {
+                        ZcodeControlAccessibilityService.get().deepLinkPlay(pkg, query,
+                                () -> searchAndPlayFallback(context, pkg, query, callback),
+                                callback);
+                    }
+                }, 120L);
+                return;
+            }
+            searchAndPlayFallback(context, nameOrPackage, query, callback);
+        });
+    }
+
+    /** Launch + search-control + typed-query pipeline (the universal fallback). */
+    private static void searchAndPlayFallback(Context context, String pkg,
+            String query, Callback callback) {
+        MAIN.post(() -> {
+            if (!ZcodeControlAccessibilityService.isReady()) {
+                callback.onResult(context.getString(R.string.action_need_accessibility));
+                return;
+            }
+            launchApp(context, pkg, result -> { });
+            ZcodeControlAccessibilityService.get().searchAndPlay(query, callback);
         });
     }
 
