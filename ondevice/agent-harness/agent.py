@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     "zphone_token": "",
     "confirm_destructive": False,
     "max_steps": 8,
+    "model_timeout": 180,
     "transcript_dir": os.path.join(HERE, "transcripts"),
 }
 
@@ -158,6 +159,13 @@ def extract_tool(message):
     text = message.get("content") or ""
     if not text.strip():
         return None, None
+    # The small on-device model often drops native tool calls after the first
+    # step and answers prose in the exact shape "Tool call: name({...})".
+    prose = re.search(r"Tool call:\s*(\w+)\s*\(", text)
+    if prose:
+        args = _first_json_object(text[prose.start():])
+        if isinstance(args, dict):
+            return prose.group(1), args
     for block in re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
                             text, re.S) or [text]:
         candidate = _first_json_object(block)
@@ -284,7 +292,8 @@ class Harness:
         repair_used = False
         for step in range(1, steps + 1):
             try:
-                response = chat(self.cfg["model_base"], messages)
+                response = chat(self.cfg["model_base"], messages,
+                                timeout=self.cfg.get("model_timeout", 180))
             except ModelDown as exc:
                 self._record("model_down", str(exc))
                 self.log("MODEL SERVER DOWN: %s" % exc)

@@ -194,6 +194,16 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn({"action": "torch", "state": "on"}, self.device_log)
 
+    def test_prose_tool_call_line_is_parsed(self):
+        model, _ = _make_model_server([
+            {"content": 'Tool call: torch({"state": "on"})'},
+            {"tool_calls": [{"name": "finish",
+                             "arguments": {"summary": "torch on"}}]},
+        ])
+        code, _ = self._run(self._cfg(model.server_address[1]), "torch on")
+        self.assertEqual(code, 0)
+        self.assertIn({"action": "torch", "state": "on"}, self.device_log)
+
     def test_prose_answer_gets_one_repair_then_finish(self):
         model, state = _make_model_server([
             {"content": "I would open youtube for you."},
