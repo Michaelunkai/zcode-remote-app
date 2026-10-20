@@ -67,6 +67,13 @@ public class SessionKeepService extends Service {
             return START_NOT_STICKY;
         }
         ZphoneServer.start(this);
+        // Boot/kill prewarm: hold an offscreen, already-connecting session
+        // page so the first open after a reboot adopts it instantly (<2 s)
+        // instead of paying the ~9 s server-side relay handshake.
+        String url = new UrlStore(this).get();
+        if (!url.isEmpty()) {
+            SessionWebViewHolder.ensureLoadedWhenNetworkUp(this, url);
+        }
         Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification,

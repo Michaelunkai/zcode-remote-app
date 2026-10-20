@@ -15,11 +15,16 @@ public class RestartReceiver extends BroadcastReceiver {
 
     private static final String TAG = "ZcodeRestart";
 
+    /** Diagnostic/adb hook: start the keep-alive + prewarm chain on demand. */
+    public static final String ACTION_PREWARM =
+            "com.michaelunkai.zcoderemote.action.PREWARM";
+
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent == null ? null : intent.getAction();
         if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
-                && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+                && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
+                && !ACTION_PREWARM.equals(action)) {
             return;
         }
         try {

@@ -55,13 +55,15 @@
             android:parentActivityName=".MainActivity" />
 
         <!-- Process warm-up after reboot / app update: the next icon tap is a
-             warm resume (<1 s) instead of a cold page handshake (~9 s). -->
+             warm resume (<1 s) instead of a cold page handshake (~9 s).
+             PREWARM is the adb/diagnostic trigger for the same chain. -->
         <receiver
             android:name=".RestartReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="com.michaelunkai.zcoderemote.action.PREWARM" />
             </intent-filter>
         </receiver>
 

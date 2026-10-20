@@ -105,6 +105,34 @@ public class MainActivity extends AppCompatActivity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoRetry = this::autoRetryOnce;
     private int retryAttempt = 0;
+    private int pageChecksRemaining = 0;
+    private long sessionLoadStartedAt = 0L;
+    private boolean stuckNoticeShown = false;
+
+    /**
+     * Continuous page health scan (while resumed): surfaces the rotation-
+     * invalid page and the never-finishing relay wizard as actionable
+     * overlays instead of leaving the user on a dead silent screen.
+     */
+    private final Runnable pageHealthCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (isFinishing() || localAgentMode || mainFrameError || webView == null) {
+                return;
+            }
+            scanForInvalidLink(webView);
+            if (pageChecksRemaining > 0) {
+                pageChecksRemaining--;
+                mainHandler.postDelayed(this, 5000L);
+            }
+        }
+    };
+
+    private void restartPageHealthChecks() {
+        pageChecksRemaining = 18; // ~90 s of checks after each load/resume
+        mainHandler.removeCallbacks(pageHealthCheck);
+        mainHandler.postDelayed(pageHealthCheck, 5000L);
+    }
 
     /** JS bridge: the injected scroll watcher reports inner-container state. */
     private class ScrollWatcher {
@@ -142,6 +170,7 @@ public class MainActivity extends AppCompatActivity {
         Button btnDevicePanel = findViewById(R.id.btn_device_panel);
         Button btnLocalAgent = findViewById(R.id.btn_local_agent);
 
+        adoptSharedSessionView();
         configureWebViewSettings();
         configureWebViewClients();
         registerNetworkHeal();
@@ -186,7 +215,8 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Deterministic adb entries: `--ez open_panel true` opens the device
      * panel; `--ez open_local_agent true` switches to the on-device AI view
-     * (loopback model server) without ever touching the stored session URL.
+     * (loopback model server) without ever touching the stored session URL;
+     * `--ez reload_url true` (bridge /seturl) reloads the freshly pushed URL.
      */
     private void maybeHandleLaunchExtras(Intent intent) {
         if (intent != null && intent.getBooleanExtra("open_panel", false)) {
@@ -196,6 +226,44 @@ public class MainActivity extends AppCompatActivity {
             retryAttempt = 0;
             enterLocalAgent();
         }
+        if (intent != null && intent.getBooleanExtra("reload_url", false)) {
+            retryAttempt = 0;
+            stuckNoticeShown = false;
+            loadEffectiveUrl();
+        }
+    }
+
+    /**
+     * The keep-alive service holds an offscreen, already-connected session
+     * WebView (boot prewarm, SessionWebViewHolder). When it matches the
+     * stored URL, adopt it in place of the XML-declared view: opening the
+     * app then lands on the live page in well under a second instead of
+     * paying the ~9 s server-side relay handshake. The XML view is
+     * destroyed; the shared one is re-wired with this activity's clients.
+     */
+    private void adoptSharedSessionView() {
+        String target = urlStore.get();
+        if (target.isEmpty() || !target.equals(SessionWebViewHolder.loadedUrl())) {
+            SessionWebViewHolder.register(webView, target);
+            return;
+        }
+        WebView shared = SessionWebViewHolder.adopt();
+        if (shared == null || shared == webView) {
+            SessionWebViewHolder.register(webView, target);
+            return;
+        }
+        ViewGroup parent = (ViewGroup) webView.getParent();
+        ViewGroup.LayoutParams params = webView.getLayoutParams();
+        int index = parent.indexOfChild(webView);
+        parent.removeView(webView);
+        webView.destroy();
+        webView = shared;
+        parent.addView(webView, index, params);
+        lastLoadedUrl = target;
+        // The page already finished offscreen: re-bind the scroll watcher now
+        // (onPageFinished will not re-fire for an already-loaded page).
+        innerScrolledUp = false;
+        webView.evaluateJavascript(SCROLL_WATCHER_JS, null);
     }
 
     private void configureWebViewSettings() {
@@ -276,6 +344,7 @@ public class MainActivity extends AppCompatActivity {
                         // ("Mobile Connection Invalid"/AUTH_FAILED), not an error:
                         // surface the update-URL guidance instead of a blank retry.
                         scanForInvalidLink(view);
+                        restartPageHealthChecks();
                     }
                 }
             }
@@ -425,8 +494,11 @@ public class MainActivity extends AppCompatActivity {
         }
         if (localAgentMode) {
             startPcProbe();
-        } else if (!effective.equals(lastLoadedUrl)) {
+        } else if (!effective.equals(lastLoadedUrl) || webView.getUrl() == null) {
             loadEffectiveUrl();
+        }
+        if (!localAgentMode) {
+            restartPageHealthChecks();
         }
     }
 
@@ -435,6 +507,16 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
         // Foreground-only polling: zero battery cost while backgrounded.
         stopPcProbe();
+        mainHandler.removeCallbacks(pageHealthCheck);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Hand the live page back to the keep-alive holder: it keeps running
+        // offscreen in the service-held process, so the next open is an
+        // instant adopt instead of a cold relay handshake.
+        SessionWebViewHolder.handBack();
     }
 
     @Override
@@ -461,9 +543,12 @@ public class MainActivity extends AppCompatActivity {
         returnNotice.setVisibility(View.GONE);
         lastLoadedUrl = effective;
         mainFrameError = false;
+        stuckNoticeShown = false;
+        sessionLoadStartedAt = SystemClock.elapsedRealtime();
         mainHandler.removeCallbacks(autoRetry);
         hideError();
         webView.loadUrl(effective);
+        SessionWebViewHolder.register(webView, effective);
     }
 
     /**
@@ -479,6 +564,7 @@ public class MainActivity extends AppCompatActivity {
         mainHandler.removeCallbacks(autoRetry);
         hideError();
         webView.loadUrl(LOCAL_AGENT_URL);
+        SessionWebViewHolder.register(webView, LOCAL_AGENT_URL);
         // Fresh back list: Back from the agent minimizes instead of landing on
         // the dead session page; exitLocalAgent reloads the session explicitly.
         webView.clearHistory();
@@ -574,6 +660,7 @@ public class MainActivity extends AppCompatActivity {
             webView.destroy();
             webView = new WebView(this);
             webView.setId(R.id.web_view);
+            SessionWebViewHolder.register(webView, urlStore.get());
             configureWebViewSettings();
             configureWebViewClients();
             ViewGroup.LayoutParams params = new ViewGroup.LayoutParams(
@@ -658,16 +745,56 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh.setRefreshing(false);
     }
 
-    /** One-shot scan of the loaded session page for rotation-invalid markers. */
+    /**
+     * The relay wizard rendered but never finishes (dead link left hanging,
+     * relay unreachable from this network): after 30 s of silence, tell the
+     * user what to do instead of an eternal spinner. Auto-retry keeps
+     * running — a network blip heals itself on the next reload.
+     */
+    private void showStuckConnecting() {
+        if (stuckNoticeShown) {
+            return;
+        }
+        stuckNoticeShown = true;
+        offlineTitle.setVisibility(View.VISIBLE);
+        offlineTitle.setText(R.string.still_connecting_title);
+        errorMessage.setText(getString(R.string.still_connecting_hint));
+        btnBackSession.setVisibility(View.GONE);
+        errorOverlay.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        swipeRefresh.setRefreshing(false);
+        scheduleAutoRetry();
+    }
+
+    /**
+     * Scans the loaded session page for failure markers. Runs once at page
+     * finish and then periodically while resumed: the rotation-invalid page
+     * and the hung relay wizard both render LONG AFTER onPageFinished, so a
+     * one-shot scan never saw them (the user stared at a dead page).
+     */
     private void scanForInvalidLink(WebView view) {
         view.evaluateJavascript(
                 "(function(){var t=(document.body&&document.body.innerText)||'';"
-                + "return (t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)"
-                + "?'true':'false';})()",
+                + "if(t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)return 'invalid';"
+                + "if(t.indexOf('Connecting relay service')>=0)return 'connecting';"
+                + "return 'ok';})()",
                 value -> {
-                    if (value != null && value.contains("true") && !mainFrameError
-                            && !localAgentMode && !isFinishing()) {
+                    if (value == null || mainFrameError || localAgentMode || isFinishing()) {
+                        return;
+                    }
+                    if (value.contains("invalid")) {
                         showInvalidLink();
+                    } else if (value.contains("connecting")) {
+                        long elapsed = sessionLoadStartedAt == 0L
+                                ? Long.MAX_VALUE
+                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                        if (elapsed > 30000L) {
+                            showStuckConnecting();
+                        }
+                    } else if (stuckNoticeShown) {
+                        // The page recovered (connected or moved on): drop the notice.
+                        stuckNoticeShown = false;
+                        hideError();
                     }
                 });
     }

@@ -23,6 +23,8 @@ Usage:
   zphone key play|next|prev | vol up|down|mute
   zphone torch on|off | brightness <1-255>
   zphone exec <action> <json-fields>  # raw: zphone exec launch_app {"app":"youtube"}
+  zphone seturl <https://... | @file> # rotation heal: push a fresh session URL
+                                      # to the phone app (no manual re-pairing)
 """
 import json
 import os
@@ -173,6 +175,32 @@ def main():
 
     def arg(index):
         return args[index] if len(args) > index else ""
+
+    if action == "seturl":
+        # Rotation heal: push the freshly minted session URL to the phone app.
+        # '@file' reads the URL from a file so the token never hits argv/logs.
+        url = arg(1)
+        if url.startswith("@"):
+            with open(url[1:], "r", encoding="utf-8") as handle:
+                url = handle.read().strip()
+        if not url.startswith("http"):
+            print("usage: zphone seturl <https://... | @file>")
+            sys.exit(1)
+        host = config.get("host")
+        if not host:
+            host, _ = discover(token)
+            if not host:
+                print("bridge not found; run: zphone set <host> 8765 <token>")
+                sys.exit(2)
+            config["host"] = host
+            save_config(config)
+        try:
+            result = request(host, token, "/seturl", {"url": url})
+        except Exception as error:
+            print(f"error: {error}")
+            sys.exit(1)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
 
     if action == "open":
         body = {"action": "launch_app", "app": arg(1)}

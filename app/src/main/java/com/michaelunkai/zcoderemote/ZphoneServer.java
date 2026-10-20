@@ -135,6 +135,8 @@ public class ZphoneServer {
                 response = statusJson(context);
             } else if ("/exec".equals(path) && "POST".equals(method)) {
                 response = exec(context, body.toString());
+            } else if ("/seturl".equals(path) && "POST".equals(method)) {
+                response = setUrl(context, body.toString());
             } else if ("/shot.png".equals(path)) {
                 serveScreenshot(context, socket);
                 return;
@@ -159,9 +161,29 @@ public class ZphoneServer {
         }
     }
 
-    /** Streams a fresh screenshot as PNG (agent can actually see the phone). */
-    private static void serveScreenshot(Context context, Socket socket) {
+    /**
+     * Rotation heal, no manual steps: the PC pushes the freshly minted
+     * session URL ({"url": "https://..."}) over the LAN bridge; the app
+     * validates + persists it and reloads the session page immediately.
+     */
+    private static String setUrl(Context context, String body) {
+        String url = str(body, "url");
+        if (url == null || url.trim().isEmpty() || !new UrlStore(context).save(url.trim())) {
+            return "{\"status\":\"error\",\"message\":\"invalid url\"}";
+        }
         try {
+            Intent reload = new Intent(context, MainActivity.class);
+            reload.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            reload.putExtra("reload_url", true);
+            context.startActivity(reload);
+        } catch (Exception e) {
+            Log.w(TAG, "seturl reload launch failed; next resume picks it up", e);
+        }
+        return "{\"status\":\"ok\",\"saved\":true}";
+    }
+
+    /** Streams a fresh screenshot as PNG (agent can actually see the phone). */
+    private static void serveScreenshot(Context context, Socket socket) {        try {
             ZcodeControlAccessibilityService service = ZcodeControlAccessibilityService.get();
             if (service == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 byte[] payload = "{\"status\":\"error\"}".getBytes(StandardCharsets.UTF_8);
