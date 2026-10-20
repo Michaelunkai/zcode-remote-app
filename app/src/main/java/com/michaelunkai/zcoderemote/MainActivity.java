@@ -84,6 +84,25 @@ public class MainActivity extends AppCompatActivity {
             + "AndroidScroll.onScrolled(false);"
             + "})();";
 
+    /**
+     * Fit guard: the session site targets phones, but if a future page ships
+     * without a device-width viewport (or a desktop one), the WebView would
+     * lay out at ~1000 px and render a shrunken desktop shell. Force
+     * device-width + scale 1 so every page always fits the screen exactly.
+     * No-op when the page already declares the correct viewport.
+     */
+    private static final String VIEWPORT_FIT_JS =
+            "(function(){"
+            + "var c='width=device-width,initial-scale=1';"
+            + "var m=document.querySelector('meta[name=viewport]');"
+            + "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');"
+            + "document.head.appendChild(m);m.setAttribute('content',c);return 'added';}"
+            + "var cur=m.getAttribute('content')||'';"
+            + "if(cur.replace(/\\s/g,'').indexOf('width=device-width')<0){"
+            + "m.setAttribute('content',c);return 'forced';}"
+            + "return 'ok';"
+            + "})();";
+
     private UrlStore urlStore;
     private WebView webView;
     private SwipeRefreshGate swipeRefresh;
@@ -108,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private int pageChecksRemaining = 0;
     private long sessionLoadStartedAt = 0L;
     private boolean stuckNoticeShown = false;
+    private boolean orphanNoticeShown = false;
 
     /**
      * Continuous page health scan (while resumed): surfaces the rotation-
@@ -129,7 +149,7 @@ public class MainActivity extends AppCompatActivity {
     };
 
     private void restartPageHealthChecks() {
-        pageChecksRemaining = 18; // ~90 s of checks after each load/resume
+        pageChecksRemaining = 36; // ~3 min of checks after each load/resume
         mainHandler.removeCallbacks(pageHealthCheck);
         mainHandler.postDelayed(pageHealthCheck, 5000L);
     }
@@ -229,6 +249,7 @@ public class MainActivity extends AppCompatActivity {
         if (intent != null && intent.getBooleanExtra("reload_url", false)) {
             retryAttempt = 0;
             stuckNoticeShown = false;
+            orphanNoticeShown = false;
             loadEffectiveUrl();
         }
     }
@@ -264,6 +285,7 @@ public class MainActivity extends AppCompatActivity {
         // (onPageFinished will not re-fire for an already-loaded page).
         innerScrolledUp = false;
         webView.evaluateJavascript(SCROLL_WATCHER_JS, null);
+        webView.evaluateJavascript(VIEWPORT_FIT_JS, null);
     }
 
     private void configureWebViewSettings() {
@@ -333,6 +355,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 innerScrolledUp = false;
                 view.evaluateJavascript(SCROLL_WATCHER_JS, null);
+                view.evaluateJavascript(VIEWPORT_FIT_JS, null);
                 if (mainFrameError) {
                     mainFrameError = false;
                 } else {
@@ -544,6 +567,7 @@ public class MainActivity extends AppCompatActivity {
         lastLoadedUrl = effective;
         mainFrameError = false;
         stuckNoticeShown = false;
+        orphanNoticeShown = false;
         sessionLoadStartedAt = SystemClock.elapsedRealtime();
         mainHandler.removeCallbacks(autoRetry);
         hideError();
@@ -767,6 +791,28 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
+     * The link's desktop session has ended: the web app silently drops the
+     * phone into its sessions/tasks menu instead of the chat (orphaned link,
+     * live-verified 2026-10-20). After 90 s stranded in that menu, say so
+     * and keep auto-retrying — the PC's zero-tap seturl push reloads the
+     * fresh link and this overlay clears by itself.
+     */
+    private void showSessionEnded() {
+        if (orphanNoticeShown) {
+            return;
+        }
+        orphanNoticeShown = true;
+        offlineTitle.setVisibility(View.VISIBLE);
+        offlineTitle.setText(R.string.session_ended_title);
+        errorMessage.setText(getString(R.string.session_ended_hint));
+        btnBackSession.setVisibility(View.GONE);
+        errorOverlay.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        swipeRefresh.setRefreshing(false);
+        scheduleAutoRetry();
+    }
+
+    /**
      * Scans the loaded session page for failure markers. Runs once at page
      * finish and then periodically while resumed: the rotation-invalid page
      * and the hung relay wizard both render LONG AFTER onPageFinished, so a
@@ -777,6 +823,16 @@ public class MainActivity extends AppCompatActivity {
                 "(function(){var t=(document.body&&document.body.innerText)||'';"
                 + "if(t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)return 'invalid';"
                 + "if(t.indexOf('Connecting relay service')>=0)return 'connecting';"
+                // Orphaned-link state: the linked desktop session ended and the
+                // web app silently drops the phone into its sessions/tasks menu
+                // (drawer markers present) with no chat composer anywhere.
+                + "var composer=document.querySelector('textarea,[contenteditable=\"true\"],[contenteditable=\"\"]');"
+                + "if(!composer){var nav=0;"
+                + "if(t.indexOf('Pinned tasks')>=0)nav++;"
+                + "if(t.indexOf('Automations')>=0)nav++;"
+                + "if(t.indexOf('Plugin Marketplace')>=0)nav++;"
+                + "if(t.indexOf('Task list')>=0)nav++;"
+                + "if(nav>=2)return 'menu';}"
                 + "return 'ok';})()",
                 value -> {
                     if (value == null || mainFrameError || localAgentMode || isFinishing()) {
@@ -791,9 +847,20 @@ public class MainActivity extends AppCompatActivity {
                         if (elapsed > 30000L) {
                             showStuckConnecting();
                         }
-                    } else if (stuckNoticeShown) {
+                    } else if (value.contains("menu")) {
+                        // A fresh link briefly shows the drawer while the relay
+                        // handshake finishes; only a menu that PERSISTS means
+                        // the link's desktop session is gone.
+                        long elapsed = sessionLoadStartedAt == 0L
+                                ? Long.MAX_VALUE
+                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                        if (elapsed > 90000L) {
+                            showSessionEnded();
+                        }
+                    } else if (stuckNoticeShown || orphanNoticeShown) {
                         // The page recovered (connected or moved on): drop the notice.
                         stuckNoticeShown = false;
+                        orphanNoticeShown = false;
                         hideError();
                     }
                 });

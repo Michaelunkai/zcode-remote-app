@@ -18,6 +18,8 @@
     <string name="invalid_link_hint">The PC rotated the remote link, so this one is no longer valid. Change URL to the latest link from the desktop.</string>
     <string name="still_connecting_title">Still connecting</string>
     <string name="still_connecting_hint">The relay page has not finished connecting after 30 seconds. If this screen never finishes, the link has expired — ask the PC to push a fresh link (zphone seturl), or tap Change URL. Retry keeps running automatically.</string>
+    <string name="session_ended_title">Desktop session ended</string>
+    <string name="session_ended_hint">This link points to a desktop session that has finished, so the app landed on the sessions menu instead of the chat. The PC can push a fresh link automatically (zphone seturl) — Retry keeps running and this clears by itself, or tap Change URL.</string>
     <string name="return_notice">● PC is back — tap to return to the session</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save &amp; Open</string>
