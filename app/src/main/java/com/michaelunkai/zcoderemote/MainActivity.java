@@ -145,15 +145,26 @@ public class MainActivity extends AppCompatActivity {
     private ViewGroup.LayoutParams webViewHomeParams;
 
     /**
-     * Auto-tap the SPA's own "Try Again" on its hard-error pages: the page
-     * heals itself when prompted, so the app prompts it — nobody should ever
-     * have to read "Desktop offline / What happened" or press anything.
+     * Auto-tap the SPA's own "Try Again" on its give-up pages. This SPA
+     * (React + pointer events) IGNORES bare el.click() — the full synthetic
+     * pointer/mouse sequence is required (same proven pattern as
+     * ProjectsBar): pointerdown, mousedown, pointerup, mouseup, click.
      */
     private static final String TRY_AGAIN_JS =
             "(function(){var bs=document.querySelectorAll('button,[role=button]');"
-            + "for(var i=0;i<bs.length;i++){var t=((bs[i].innerText||'')+' '"
-            + "+(bs[i].getAttribute('aria-label')||''));"
-            + "if(/try again/i.test(t)){try{bs[i].click();}catch(e){}"
+            + "for(var i=0;i<bs.length;i++){var e=bs[i];"
+            + "var t=((e.innerText||'')+' '+(e.getAttribute('aria-label')||''));"
+            + "if(/try again/i.test(t)){"
+            + "try{"
+            + "var r=e.getBoundingClientRect();"
+            + "var o={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2};"
+            + "e.dispatchEvent(new PointerEvent('pointerdown',o));"
+            + "e.dispatchEvent(new MouseEvent('mousedown',o));"
+            + "e.dispatchEvent(new PointerEvent('pointerup',o));"
+            + "e.dispatchEvent(new MouseEvent('mouseup',o));"
+            + "e.dispatchEvent(new MouseEvent('click',o));"
+            + "if(typeof e.click==='function')try{e.click();}catch(x){}"
+            + "}catch(err){}"
             + "return 'tapped';}}"
             + "return 'none';})();";
 
@@ -169,8 +180,17 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             scanForInvalidLink(webView);
-            if (pageChecksRemaining > 0) {
-                pageChecksRemaining--;
+            // Continuous while resumed once the page is unhealthy: the old
+            // 36-check (~3 min) cap made every recovery action — Try-Again
+            // taps, give-up reloads — silently STOP after three minutes,
+            // which is exactly when the owner watched it "stop
+            // reconnecting". A healthy page keeps the original cap.
+            boolean unhealthy = !PageScan.OK.equals(SessionHealth.state())
+                    && !SessionHealth.state().isEmpty();
+            if (pageChecksRemaining > 0 || unhealthy) {
+                if (pageChecksRemaining > 0) {
+                    pageChecksRemaining--;
+                }
                 mainHandler.postDelayed(this, 5000L);
             }
         }
@@ -312,6 +332,7 @@ public class MainActivity extends AppCompatActivity {
         webView.destroy();
         webView = shared;
         parent.addView(webView, index, params);
+        kickSurface(webView);
         lastLoadedUrl = target;
         // Never adopt a broken page: if the offscreen load failed (network
         // blip, "web page not available"), reload it now instead of showing
@@ -327,6 +348,25 @@ public class MainActivity extends AppCompatActivity {
         webView.evaluateJavascript(SCROLL_WATCHER_JS, null);
         webView.evaluateJavascript(VIEWPORT_FIT_JS, null);
         webView.evaluateJavascript(VISIBILITY_JS, null);
+    }
+
+
+    /**
+     * Re-parenting a WebView between windows (activity layout <-> offscreen
+     * keep-alive overlay) can leave its surface BLACK on some compositors —
+     * the DOM stays live behind dead pixels (owner saw "black screen" with
+     * a healthy page). Kick the layer pipeline: brief software layer forces
+     * a full redraw, then back to hardware acceleration.
+     */
+    private void kickSurface(WebView view) {
+        if (view == null) {
+            return;
+        }
+        view.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        final WebView v = view;
+        v.post(() -> v.setLayerType(View.LAYER_TYPE_NONE, null));
+        v.invalidate();
+        v.requestLayout();
     }
 
     private void configureWebViewSettings() {
@@ -552,6 +592,7 @@ public class MainActivity extends AppCompatActivity {
         if (webView != null && webViewHomeParent != null
                 && webView.getParent() == null) {
             webViewHomeParent.addView(webView, webViewHomeIndex, webViewHomeParams);
+            kickSurface(webView);
         }
         webViewHomeParent = null;
     }
@@ -586,6 +627,16 @@ public class MainActivity extends AppCompatActivity {
         String effective = urlStore.get();
         if (effective.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
+            return;
+        }
+        // DEAD-SURFACE CURE: after heavy reconnect churn a WebView surface
+        // can render permanently black while its DOM stays alive (owner-
+        // reported "black screen" with a healthy page). Rebuilding the whole
+        // activity while the user is already away is invisible and lands on
+        // a fresh surface; the prewarm machinery reconnects offscreen.
+        if (!localAgentMode && SessionWebViewHolder.navCount() > 60 && !isChangingConfigurations()) {
+            SessionWebViewHolder.markRebuildDone();
+            recreate();
             return;
         }
         if (localAgentMode) {

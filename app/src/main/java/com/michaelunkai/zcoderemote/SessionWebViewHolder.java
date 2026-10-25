@@ -45,6 +45,7 @@ public final class SessionWebViewHolder {
     private static boolean destroyed = false;  // renderer/view unusable
     private static boolean inOverlay = false;  // pinned in the offscreen keep-visible window
     private static long desktopOfflineSince = 0L; // 0 = not currently desktop-offline
+    private static int navCount = 0; // loads/reloads this view instance survived
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     /**
@@ -88,11 +89,17 @@ public final class SessionWebViewHolder {
                             if (held >= grace) {
                                 webView.evaluateJavascript(
                                         "(function(){var bs=document.querySelectorAll"
-                                        + "('button,[role=button]');for(var i=0;i<bs.length;i++)"
-                                        + "{var t=((bs[i].innerText||'')+' '+(bs[i]"
-                                        + ".getAttribute('aria-label')||''));"
-                                        + "if(/try again/i.test(t)){try{bs[i].click();}"
-                                        + "catch(e){}return;}}})();", null);
+                                        + "('button,[role=button]');for(var i=0;i<bs.length;i++){var e=bs[i];"
+                                        + "var t=((e.innerText||'')+' '+(e.getAttribute('aria-label')||''));"
+                                        + "if(/try again/i.test(t)){try{"
+                                        + "var r=e.getBoundingClientRect();"
+                                        + "var o={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2};"
+                                        + "e.dispatchEvent(new PointerEvent('pointerdown',o));"
+                                        + "e.dispatchEvent(new MouseEvent('mousedown',o));"
+                                        + "e.dispatchEvent(new PointerEvent('pointerup',o));"
+                                        + "e.dispatchEvent(new MouseEvent('mouseup',o));"
+                                        + "e.dispatchEvent(new MouseEvent('click',o));"
+                                        + "}catch(err){}return;}}})();", null);
                             }
                             long reloadAfter = offline ? 180000L : 300000L;
                             if (held > reloadAfter) {
@@ -135,6 +142,16 @@ public final class SessionWebViewHolder {
     /** The URL currently loaded (or loading) into the shared view; "" when none. */
     public static String loadedUrl() {
         return destroyed ? "" : loadedUrl;
+    }
+
+    /** Navigations survived by the current view — surfaces die after churn. */
+    public static int navCount() {
+        return navCount;
+    }
+
+    /** Resets the churn counter (the activity rebuilds; fresh surface). */
+    public static void markRebuildDone() {
+        navCount = 0;
     }
 
     /** True when the shared view exists and is not parented to an activity. */
@@ -185,6 +202,7 @@ public final class SessionWebViewHolder {
             // Different URL (rotation healed from the PC): reload in place —
             // keeps cookies/tabs state and avoids a second WebView instance.
             Log.i(TAG, "createAndLoad: reloading idle view with new url");
+            navCount++;
             loadedUrl = url;
             SessionHealth.loadStarted();
             webView.loadUrl(url);
@@ -255,6 +273,7 @@ public final class SessionWebViewHolder {
             destroyed = false;
             attached = false;
             loadedUrl = url;
+            navCount = 0;
             SessionHealth.loadStarted();
             view.loadUrl(url);
             Log.i(TAG, "offscreen session WebView prewarming " + url.split("\\?")[0]);
@@ -303,6 +322,7 @@ public final class SessionWebViewHolder {
         loadedUrl = url == null ? "" : url;
         destroyed = false;
         attached = true;
+        navCount = 0;
     }
 
     /**
