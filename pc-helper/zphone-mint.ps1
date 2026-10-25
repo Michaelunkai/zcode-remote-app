@@ -81,8 +81,29 @@ function Invoke-Element($el) {
 }
 
 function Close-Panel($roots) {
-    # The panel is a flyout toggled by the "Mobile remote control" button;
-    # re-invoking it closes the panel. Verified by "Copy link" disappearing.
+    # The panel ships its own Close button; it appears LAST in the element
+    # tree (panel overlays at the end), which disambiguates it from every
+    # other Close in the app. Prefer it — the toggle fallback can re-OPEN a
+    # second panel (live-observed 2026-10-25). Verified closed when the
+    # "Copy link" element is gone.
+    try {
+        $cond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Close')
+        $closes = $root0 = $null
+        foreach ($root in $roots) {
+            $found = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+            if ($found.Count -gt 0) {
+                $closes = $found
+                $root0 = $root
+                break
+            }
+        }
+        if ($closes -and $closes.Count -gt 0) {
+            [void](Invoke-Element $closes[$closes.Count - 1])
+            Start-Sleep -Milliseconds 900
+        }
+    } catch { }
+    if (-not (Find-Element $roots 'Copy link')) { return $true }
     for ($i = 0; $i -lt 2; $i++) {
         if (-not (Find-Element $roots 'Copy link')) { return $true }
         $btn = Find-Element $roots 'Mobile remote control'

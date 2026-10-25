@@ -68,7 +68,7 @@ public final class PageScan {
             // live diagnosis ("nosession|/remote/v4|Waiting for desktop
             // pairing" — the watchdog and logcat see exactly what the user
             // would see, without any screenshot round-trip.
-            + "var head=t.replace(/\\s+/g,' ').trim().slice(0,140);"
+            + "var head=t.replace(/\\s+/g,' ').trim().slice(0,400);"
             + "if(nav>=2)return 'menu|'+location.pathname+'|'+head;"
             + "return 'nosession|'+location.pathname+'|'+head;}"
             + "return 'ok';})();";
