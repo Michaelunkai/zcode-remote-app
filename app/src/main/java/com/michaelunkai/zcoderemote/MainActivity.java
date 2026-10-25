@@ -141,6 +141,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean orphanNoticeShown = false;
     private boolean deviceOfflineNoticeShown = false;
     private View reconnectVeil;
+    private TextView veilLabel;
+    private long veilSince = 0L;
     private ViewGroup webViewHomeParent;
     private int webViewHomeIndex = -1;
     private ViewGroup.LayoutParams webViewHomeParams;
@@ -167,7 +169,23 @@ public class MainActivity extends AppCompatActivity {
                     && !SessionHealth.LOCAL_AGENT.equals(state)
                     && SessionHealth.ageSeconds() >= 5;
             if (reconnectVeil != null && !localAgentMode) {
+                if (retrying && reconnectVeil.getVisibility() != View.VISIBLE) {
+                    veilSince = SystemClock.elapsedRealtime();
+                }
                 reconnectVeil.setVisibility(retrying ? View.VISIBLE : View.GONE);
+                if (retrying && veilLabel != null) {
+                    long waited = (SystemClock.elapsedRealtime() - veilSince) / 1000L;
+                    String doing;
+                    if (PageScan.CONNECTING.equals(state)
+                            || PageScan.DESKTOP_TIMEDOUT.equals(state)
+                            || PageScan.DESKTOP_OFFLINE.equals(state)) {
+                        doing = "Contacting your desktop";
+                    } else {
+                        doing = "Reconnecting";
+                    }
+                    veilLabel.setText(getString(R.string.veil_reconnecting)
+                            + "\n" + doing + "… " + waited + "s — this recovers by itself");
+                }
             }
             mainHandler.postDelayed(this, 2000L);
         }
@@ -903,6 +921,7 @@ public class MainActivity extends AppCompatActivity {
         box.setGravity(android.view.Gravity.CENTER);
         ProgressBar spinner = new ProgressBar(this);
         TextView label = new TextView(this);
+        veilLabel = label;
         label.setText(R.string.veil_reconnecting);
         label.setTextColor(0xFFB9B4D0);
         label.setTextSize(15);
