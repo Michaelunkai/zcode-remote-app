@@ -69,6 +69,16 @@ class Adapter(BaseHTTPRequestHandler):
     def _proxy(self):
         length = int(self.headers.get("Content-Length", 0) or 0)
         payload = self.rfile.read(length) if length else None
+        if payload and self.path.split("?")[0] == "/v1/chat/completions":
+            # Clients use different model names ("local", app default, …);
+            # ollama only knows the imported tag — alias everything to it.
+            try:
+                body = json.loads(payload)
+                if isinstance(body, dict) and body.get("model") != "qwen3b":
+                    body["model"] = "qwen3b"
+                    payload = json.dumps(body).encode()
+            except (ValueError, UnicodeDecodeError):
+                pass
         req = urllib.request.Request(OLLAMA + self.path, data=payload,
                                      method=self.command)
         req.add_header("Content-Type", "application/json")
