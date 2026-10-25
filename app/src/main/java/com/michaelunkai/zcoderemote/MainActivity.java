@@ -139,6 +139,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean stuckNoticeShown = false;
     private boolean orphanNoticeShown = false;
     private boolean deviceOfflineNoticeShown = false;
+    private View reconnectVeil;
     private ViewGroup webViewHomeParent;
     private int webViewHomeIndex = -1;
     private ViewGroup.LayoutParams webViewHomeParams;
@@ -235,6 +236,11 @@ public class MainActivity extends AppCompatActivity {
         Button btnScanQr = findViewById(R.id.btn_scan_qr);
         btnScanQr.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, QrScanActivity.class)));
+
+        // Calm reconnecting veil (owner directive: NEVER show the scary
+        // "Desktop offline"/"session ended" pages): covers the WebView only
+        // while the session is in a retry state, auto-clears on recovery.
+        reconnectVeil = buildReconnectVeil();
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -642,6 +648,7 @@ public class MainActivity extends AppCompatActivity {
         hideError();
         webView.loadUrl(LOCAL_AGENT_URL);
         SessionWebViewHolder.register(webView, LOCAL_AGENT_URL);
+        updateReconnectVeil(false);
         // Fresh back list: Back from the agent minimizes instead of landing on
         // the dead session page; exitLocalAgent reloads the session explicitly.
         webView.clearHistory();
@@ -836,6 +843,7 @@ public class MainActivity extends AppCompatActivity {
             // bridge /status even while the app sits closed in the pocket.
             SessionHealth.set(state);
             SessionHealth.setDetail(detail);
+            updateReconnectVeil(!PageScan.OK.equals(state) && SessionHealth.ageSeconds() >= 10);
             if (PageScan.OK.equals(state)) {
                 if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
                     stuckNoticeShown = false;
@@ -855,6 +863,47 @@ public class MainActivity extends AppCompatActivity {
             // heals wedges (panel-free restart-heal) when needed.
             scheduleOfflineReload();
         });
+    }
+
+    private View buildReconnectVeil() {
+        android.widget.FrameLayout veil = new android.widget.FrameLayout(this);
+        veil.setBackgroundColor(0xF20F0E17);
+        veil.setClickable(true);
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setGravity(android.view.Gravity.CENTER);
+        ProgressBar spinner = new ProgressBar(this);
+        TextView label = new TextView(this);
+        label.setText(R.string.veil_reconnecting);
+        label.setTextColor(0xFFB9B4D0);
+        label.setTextSize(15);
+        label.setPadding(0, dp(14), 0, 0);
+        label.setGravity(android.view.Gravity.CENTER);
+        box.addView(spinner, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(label, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+        veil.addView(box, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        veil.setVisibility(View.GONE);
+        android.view.ViewGroup content = findViewById(android.R.id.content);
+        content.addView(veil, new android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        return veil;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void updateReconnectVeil(boolean retrying) {
+        if (reconnectVeil != null && !localAgentMode && !isFinishing()) {
+            reconnectVeil.setVisibility(retrying ? View.VISIBLE : View.GONE);
+        }
     }
 
     private void hideError() {
