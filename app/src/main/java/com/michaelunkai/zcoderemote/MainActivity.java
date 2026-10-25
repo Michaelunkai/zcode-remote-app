@@ -140,9 +140,6 @@ public class MainActivity extends AppCompatActivity {
     private boolean stuckNoticeShown = false;
     private boolean orphanNoticeShown = false;
     private boolean deviceOfflineNoticeShown = false;
-    private View reconnectVeil;
-    private TextView veilLabel;
-    private long veilSince = 0L;
     private ViewGroup webViewHomeParent;
     private int webViewHomeIndex = -1;
     private ViewGroup.LayoutParams webViewHomeParams;
@@ -152,45 +149,6 @@ public class MainActivity extends AppCompatActivity {
      * invalid page and the never-finishing relay wizard as actionable
      * overlays instead of leaving the user on a dead silent screen.
      */
-    /**
-     * Drives the reconnecting veil from the process-wide health state every
-     * 2 s — independent of scan callbacks, so reopening the app mid-outage
-     * covers the SPA's error page immediately (owner directive: the scary
-     * pages must never be visible).
-     */
-    private final Runnable veilTicker = new Runnable() {
-        @Override
-        public void run() {
-            if (isFinishing()) {
-                return;
-            }
-            String state = SessionHealth.state();
-            boolean retrying = !state.isEmpty() && !PageScan.OK.equals(state)
-                    && !SessionHealth.LOCAL_AGENT.equals(state)
-                    && SessionHealth.ageSeconds() >= 5;
-            if (reconnectVeil != null && !localAgentMode) {
-                if (retrying && reconnectVeil.getVisibility() != View.VISIBLE) {
-                    veilSince = SystemClock.elapsedRealtime();
-                }
-                reconnectVeil.setVisibility(retrying ? View.VISIBLE : View.GONE);
-                if (retrying && veilLabel != null) {
-                    long waited = (SystemClock.elapsedRealtime() - veilSince) / 1000L;
-                    String doing;
-                    if (PageScan.CONNECTING.equals(state)
-                            || PageScan.DESKTOP_TIMEDOUT.equals(state)
-                            || PageScan.DESKTOP_OFFLINE.equals(state)) {
-                        doing = "Contacting your desktop";
-                    } else {
-                        doing = "Reconnecting";
-                    }
-                    veilLabel.setText(getString(R.string.veil_reconnecting)
-                            + "\n" + doing + "… " + waited + "s — this recovers by itself");
-                }
-            }
-            mainHandler.postDelayed(this, 2000L);
-        }
-    };
-
     private final Runnable pageHealthCheck = new Runnable() {
         @Override
         public void run() {
@@ -278,11 +236,6 @@ public class MainActivity extends AppCompatActivity {
         Button btnScanQr = findViewById(R.id.btn_scan_qr);
         btnScanQr.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, QrScanActivity.class)));
-
-        // Calm reconnecting veil (owner directive: NEVER show the scary
-        // "Desktop offline"/"session ended" pages): covers the WebView only
-        // while the session is in a retry state, auto-clears on recovery.
-        reconnectVeil = buildReconnectVeil();
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -619,8 +572,6 @@ public class MainActivity extends AppCompatActivity {
         } else if (!effective.equals(lastLoadedUrl) || webView.getUrl() == null) {
             loadEffectiveUrl();
         }
-        mainHandler.removeCallbacks(veilTicker);
-        mainHandler.post(veilTicker);
         if (!localAgentMode) {
             restartPageHealthChecks();
         }
@@ -632,7 +583,6 @@ public class MainActivity extends AppCompatActivity {
         // Foreground-only polling: zero battery cost while backgrounded.
         stopPcProbe();
         mainHandler.removeCallbacks(pageHealthCheck);
-        mainHandler.removeCallbacks(veilTicker);
     }
 
     @Override
@@ -693,7 +643,6 @@ public class MainActivity extends AppCompatActivity {
         hideError();
         webView.loadUrl(LOCAL_AGENT_URL);
         SessionWebViewHolder.register(webView, LOCAL_AGENT_URL);
-        updateReconnectVeil(false);
         // Fresh back list: Back from the agent minimizes instead of landing on
         // the dead session page; exitLocalAgent reloads the session explicitly.
         webView.clearHistory();
@@ -888,7 +837,6 @@ public class MainActivity extends AppCompatActivity {
             // bridge /status even while the app sits closed in the pocket.
             SessionHealth.set(state);
             SessionHealth.setDetail(detail);
-            updateReconnectVeil(!PageScan.OK.equals(state) && SessionHealth.ageSeconds() >= 5);
             if (PageScan.OK.equals(state)) {
                 if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
                     stuckNoticeShown = false;
@@ -910,48 +858,6 @@ public class MainActivity extends AppCompatActivity {
                 scheduleOfflineReload();
             }
         });
-    }
-
-    private View buildReconnectVeil() {
-        android.widget.FrameLayout veil = new android.widget.FrameLayout(this);
-        veil.setBackgroundColor(0xF20F0E17);
-        veil.setClickable(true);
-        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
-        box.setOrientation(android.widget.LinearLayout.VERTICAL);
-        box.setGravity(android.view.Gravity.CENTER);
-        ProgressBar spinner = new ProgressBar(this);
-        TextView label = new TextView(this);
-        veilLabel = label;
-        label.setText(R.string.veil_reconnecting);
-        label.setTextColor(0xFFB9B4D0);
-        label.setTextSize(15);
-        label.setPadding(0, dp(14), 0, 0);
-        label.setGravity(android.view.Gravity.CENTER);
-        box.addView(spinner, new android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
-        box.addView(label, new android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
-        veil.addView(box, new android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-        veil.setVisibility(View.GONE);
-        android.view.ViewGroup content = findViewById(android.R.id.content);
-        content.addView(veil, new android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-        return veil;
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void updateReconnectVeil(boolean retrying) {
-        if (reconnectVeil != null && !localAgentMode && !isFinishing()) {
-            reconnectVeil.setVisibility(retrying ? View.VISIBLE : View.GONE);
-        }
     }
 
     private void hideError() {

@@ -127,5 +127,4 @@
     <string name="accessibility_service_label">ZCode device control</string>
     <string name="accessibility_service_desc">Lets ZCode control this device on command: navigation, gestures, text input and screenshots. Passive until a command arrives.</string>
     <string name="tile_label">ZCode session</string>
-    <string name="veil_reconnecting">Reconnecting to your desktop…</string>
 </resources>
