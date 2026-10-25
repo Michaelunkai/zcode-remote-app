@@ -260,25 +260,12 @@ def main():
                           and (not restart_times
                                or now - restart_times[-1] >= RESTART_HEAL_GAP)
                           and len(restart_times) < MAX_RESTARTS_PER_DAY)
-            if restart_ok:
-                log(f"restart-heal: {reason} persisted "
-                    f"{int(now - reason_since)}s; restarting desktop app (panel-free)")
-                try:
-                    subprocess.run(["taskkill", "/IM", "ZCode.exe", "/F"],
-                                   capture_output=True, timeout=15,
-                                   creationflags=0x08000000)
-                    time.sleep(12)
-                    subprocess.run(
-                        ["cmd", "/c", "start", "",
-                         "F:\\backup\\windowsapps\\installed\\ZCode\\ZCode.exe"],
-                        capture_output=True, timeout=15,
-                        creationflags=0x08000000)
-                    restart_times.append(time.time())
-                    log("restart-heal: app restarted; phone self-reconnects (~4-5 min)")
-                    time.sleep(120)
-                except Exception as error:
-                    log(f"restart-heal error: {type(error).__name__}")
-            elif reason and not user_absent and now - last_defer_log > 300:
+            # OWNER DIRECTIVE 2026-10-25 (absolute): NEVER close ZCode or any
+            # running process. Restart-heal PERMANENTLY DISABLED — record only.
+            log(f"heal candidate ({reason}, {int(now - reason_since)}s) recorded —")
+            log("restart-heal disabled by owner directive: no process may close")
+            time.sleep(120)
+            if reason and not user_absent and now - last_defer_log > 300:
                 log(f"heal needed ({reason}) deferred: user at the PC — "
                     f"no desktop disturbance while present")
                 last_defer_log = now
