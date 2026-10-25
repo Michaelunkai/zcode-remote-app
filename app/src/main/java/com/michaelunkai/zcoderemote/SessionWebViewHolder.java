@@ -75,7 +75,7 @@ public final class SessionWebViewHolder {
                         long now = SystemClock.elapsedRealtime();
                         if (desktopOfflineSince == 0L) {
                             desktopOfflineSince = now;
-                        } else if (now - desktopOfflineSince > 20000L) {
+                        } else if (now - desktopOfflineSince > 75000L) {
                             desktopOfflineSince = 0L;
                             String url = loadedUrl;
                             if (!url.isEmpty()) {

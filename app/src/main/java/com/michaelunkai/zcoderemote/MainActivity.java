@@ -130,6 +130,7 @@ public class MainActivity extends AppCompatActivity {
     private ExecutorService pcProbeExecutor;
     private volatile boolean innerScrolledUp = false;
     private long lastScrollProbeAt = 0L;
+    private long lastForcedReloadAt = 0L;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoRetry = this::autoRetryOnce;
     private final Runnable offlineReload = this::offlineReloadOnce;
@@ -843,7 +844,7 @@ public class MainActivity extends AppCompatActivity {
             // bridge /status even while the app sits closed in the pocket.
             SessionHealth.set(state);
             SessionHealth.setDetail(detail);
-            updateReconnectVeil(!PageScan.OK.equals(state) && SessionHealth.ageSeconds() >= 10);
+            updateReconnectVeil(!PageScan.OK.equals(state) && SessionHealth.ageSeconds() >= 5);
             if (PageScan.OK.equals(state)) {
                 if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
                     stuckNoticeShown = false;
@@ -855,13 +856,15 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             // NO OVERLAYS, EVER (owner directive 2026-10-25): every non-ok
-            // state — connecting, menu/nosession disconnect screens,
-            // desktop_offline, desktop_timedout, even invalid — is transient
-            // from the app's point of view. The SPA's own screens are the
-            // only UI the user sees; this app just keeps a capped reload
-            // heartbeat so a stuck page keeps trying, and the PC watchdog
-            // heals wedges (panel-free restart-heal) when needed.
-            scheduleOfflineReload();
+            // state is transient. The SPA reconnects IN-PAGE (fast); a full
+            // page reload restarts the whole slow handshake — so reload only
+            // when genuinely wedged: the same state held >=75 s AND no forced
+            // reload in the last 75 s. Otherwise stay out of the SPA's way.
+            long nowMs = SystemClock.elapsedRealtime();
+            if (nowMs - lastForcedReloadAt > 75000L && SessionHealth.ageSeconds() >= 75) {
+                lastForcedReloadAt = nowMs;
+                scheduleOfflineReload();
+            }
         });
     }
 
