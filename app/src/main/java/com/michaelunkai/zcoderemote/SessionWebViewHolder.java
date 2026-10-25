@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -43,7 +44,55 @@ public final class SessionWebViewHolder {
     private static boolean attached = false;   // currently parented into an activity
     private static boolean destroyed = false;  // renderer/view unusable
     private static boolean inOverlay = false;  // pinned in the offscreen keep-visible window
+    private static long desktopOfflineSince = 0L; // 0 = not currently desktop-offline
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    /**
+     * Offscreen health loop (~30 s): while the session page idles in the
+     * overlay — app closed, screen off, phone locked — the same PageScan the
+     * resumed activity runs classifies the page and records it in
+     * SessionHealth, so the PC-side watchdog sees a dead session (and heals
+     * it) long before the user ever opens the app. Desktop-offline is the one
+     * state the phone heals itself: a reload once it has persisted >20 s
+     * reconnects the moment the desktop's remote side is back.
+     */
+    private static final Runnable idleHealthScan = new Runnable() {
+        @Override
+        public void run() {
+            if (webView == null || destroyed || attached) {
+                return;
+            }
+            try {
+                PageScan.scan(webView, (state, detail) -> {
+                    if (state == null || state.isEmpty()) {
+                        return;
+                    }
+                    SessionHealth.set(state);
+                    SessionHealth.setDetail(detail);
+                    SessionHealth.log(state);
+                    if (PageScan.DESKTOP_OFFLINE.equals(state)
+                            || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
+                        long now = SystemClock.elapsedRealtime();
+                        if (desktopOfflineSince == 0L) {
+                            desktopOfflineSince = now;
+                        } else if (now - desktopOfflineSince > 20000L) {
+                            desktopOfflineSince = 0L;
+                            String url = loadedUrl;
+                            if (!url.isEmpty()) {
+                                Log.i(TAG, "offscreen terminal not serving >20s; reloading idle page");
+                                reloadIfIdle(url);
+                            }
+                        }
+                    } else {
+                        desktopOfflineSince = 0L;
+                    }
+                });
+            } catch (Throwable t) {
+                Log.w(TAG, "idle health scan failed", t);
+            }
+            MAIN.postDelayed(this, 30000L);
+        }
+    };
 
     /**
      * Injected on every load: the SPA pauses its relay heartbeat when it
@@ -72,6 +121,15 @@ public final class SessionWebViewHolder {
     }
 
     /**
+     * True while an activity currently owns the shared view (onStart..onStop):
+     * the only reliable "user is looking at the page" signal — accessibility
+     * foreground tracking can lag a Home press by events.
+     */
+    public static boolean isPageAttached() {
+        return webView != null && !destroyed && attached;
+    }
+
+    /**
      * Service entry point: make sure an offscreen WebView exists and is
      * loading/holding the given session URL. Cheap no-op when the activity
      * already owns the view with the same URL.
@@ -82,16 +140,20 @@ public final class SessionWebViewHolder {
             return;
         }
         if (attached) {
-            return; // the live activity owns the view and manages its own URLs
+            Log.i(TAG, "ensureLoaded: skipped, view attached to activity"); // the live activity owns the view and manages its own URLs
+            return;
         }
         if (webView != null && !destroyed && url.equals(loadedUrl)) {
-            return; // offscreen view already holds this page; nothing to do
+            Log.i(TAG, "ensureLoaded: idle view already holds this url"); // offscreen view already holds this page; nothing to do
+            return;
         }
+        Log.i(TAG, "ensureLoaded: (re)loading idle view");
         MAIN.post(() -> createAndLoad(appContext.getApplicationContext(), url));
     }
 
     private static void createAndLoad(Context app, String url) {
         if (attached) {
+            Log.i(TAG, "createAndLoad: skipped, view became attached");
             return;
         }
         if (webView != null && !destroyed) {
@@ -100,7 +162,9 @@ public final class SessionWebViewHolder {
             }
             // Different URL (rotation healed from the PC): reload in place —
             // keeps cookies/tabs state and avoids a second WebView instance.
+            Log.i(TAG, "createAndLoad: reloading idle view with new url");
             loadedUrl = url;
+            SessionHealth.loadStarted();
             webView.loadUrl(url);
             return;
         }
@@ -125,6 +189,11 @@ public final class SessionWebViewHolder {
             view.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
             view.setWebViewClient(new WebViewClient() {
                 @Override
+                public void onPageStarted(WebView v, String pageUrl, android.graphics.Bitmap favicon) {
+                    Log.i(TAG, "idle page started loading");
+                }
+
+                @Override
                 public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
                     removeFromOverlay();
                     destroyed = true;
@@ -145,6 +214,7 @@ public final class SessionWebViewHolder {
             destroyed = false;
             attached = false;
             loadedUrl = url;
+            SessionHealth.loadStarted();
             view.loadUrl(url);
             Log.i(TAG, "offscreen session WebView prewarming " + url.split("\\?")[0]);
         } catch (Throwable t) {
@@ -272,6 +342,8 @@ public final class SessionWebViewHolder {
             wm.addView(webView, p);
             webView.setVisibility(View.VISIBLE);
             inOverlay = true;
+            MAIN.removeCallbacks(idleHealthScan);
+            MAIN.postDelayed(idleHealthScan, 15000L);
             Log.i(TAG, "session WebView pinned offscreen-visible: heartbeat stays alive");
         } catch (Throwable t) {
             Log.w(TAG, "overlay pin failed; background page will throttle", t);
@@ -279,6 +351,8 @@ public final class SessionWebViewHolder {
     }
 
     private static void removeFromOverlay() {
+        MAIN.removeCallbacks(idleHealthScan);
+        desktopOfflineSince = 0L;
         if (!inOverlay) {
             return;
         }

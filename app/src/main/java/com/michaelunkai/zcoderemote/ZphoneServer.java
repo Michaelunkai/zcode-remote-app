@@ -165,11 +165,29 @@ public class ZphoneServer {
      * Rotation heal, no manual steps: the PC pushes the freshly minted
      * session URL ({"url": "https://..."}) over the LAN bridge; the app
      * validates + persists it and reloads the session page immediately.
+     *
+     * Delivery is foreground-aware: while the user is in the app the reload
+     * is visible (activity relaunch, page swaps in front of them); while the
+     * app is backgrounded the shared WebView reloads OFFSCREEN — MainActivity
+     * is showWhenLocked, so launching it here would wake the screen in the
+     * user's pocket. Body flags override: {"visible":true} forces the
+     * activity path, {"silent":true} forces the offscreen one.
      */
     private static String setUrl(Context context, String body) {
         String url = str(body, "url");
         if (url == null || url.trim().isEmpty() || !new UrlStore(context).save(url.trim())) {
             return "{\"status\":\"error\",\"message\":\"invalid url\"}";
+        }
+        String target = url.trim();
+        // Holder-attached is the ground truth for "an activity is showing the
+        // page right now" (onStart attaches, onStop hands back to overlay).
+        if (bool(body, "silent") || !(bool(body, "visible") || SessionWebViewHolder.isPageAttached())) {
+            // Backgrounded: heal offscreen. ensureLoaded reloads the idle
+            // shared view in place (or prewarms a fresh one) without
+            // launching any UI; if the activity actually owns the view the
+            // next resume picks the new URL up from UrlStore.
+            SessionWebViewHolder.ensureLoaded(context, target);
+            return "{\"status\":\"ok\",\"saved\":true,\"reloaded\":\"offscreen\"}";
         }
         try {
             Intent reload = new Intent(context, MainActivity.class);
@@ -179,7 +197,7 @@ public class ZphoneServer {
         } catch (Exception e) {
             Log.w(TAG, "seturl reload launch failed; next resume picks it up", e);
         }
-        return "{\"status\":\"ok\",\"saved\":true}";
+        return "{\"status\":\"ok\",\"saved\":true,\"reloaded\":\"visible\"}";
     }
 
     /** Streams a fresh screenshot as PNG (agent can actually see the phone). */
@@ -244,6 +262,14 @@ public class ZphoneServer {
                         ? audio.getStreamVolume(AudioManager.STREAM_MUSIC) : -1)
                 + ",\"foreground\":\"" + j(ZcodeControlAccessibilityService.getForegroundPackage()) + "\""
                 + ",\"accessibility\":" + ZcodeControlAccessibilityService.isReady()
+                // Session page health for the PC-side watchdog: raw PageScan
+                // state ("ok"/"connecting"/"invalid"/"menu"/"desktop_offline",
+                // plus "loading"/"error"/"local_agent"), how old that reading
+                // is, and whether any session URL is stored. No URL leaks.
+                + ",\"page\":\"" + j(SessionHealth.state()) + "\""
+                + ",\"page_detail\":\"" + j(SessionHealth.detail()) + "\""
+                + ",\"page_age_s\":" + SessionHealth.ageSeconds()
+                + ",\"has_url\":" + !new UrlStore(context).get().isEmpty()
                 + "}";
     }
 
@@ -399,6 +425,13 @@ public class ZphoneServer {
                 .compile("\"" + key + "\"\\s*:\\s*(-?[0-9]+)")
                 .matcher(json);
         return matcher.find() ? Integer.parseInt(matcher.group(1)) : 0;
+    }
+
+    private static boolean bool(String json, String key) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\"" + key + "\"\\s*:\\s*(true|false)")
+                .matcher(json);
+        return matcher.find() && "true".equals(matcher.group(1));
     }
 
     private static String j(String value) {

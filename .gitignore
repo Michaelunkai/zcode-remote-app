@@ -31,3 +31,5 @@ replay_pid*.log
 # On-device harness secrets & local transcripts (never commit)
 ondevice/agent-harness/config.json
 ondevice/agent-harness/transcripts/
+pc-helper/watchdog.log*
+pc-helper/watchdog.lock

@@ -620,6 +620,7 @@ public class MainActivity extends AppCompatActivity {
         stuckNoticeShown = false;
         orphanNoticeShown = false;
         sessionLoadStartedAt = SystemClock.elapsedRealtime();
+        SessionHealth.loadStarted();
         mainHandler.removeCallbacks(autoRetry);
         hideError();
         webView.loadUrl(effective);
@@ -634,6 +635,7 @@ public class MainActivity extends AppCompatActivity {
     private void enterLocalAgent() {
         localAgentMode = true;
         lastErrorKind = ConnectionErrorKind.OTHER;
+        SessionHealth.set(SessionHealth.LOCAL_AGENT);
         lastLoadedUrl = null;
         mainFrameError = false;
         mainHandler.removeCallbacks(autoRetry);
@@ -788,6 +790,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showError(String message) {
+        SessionHealth.set(SessionHealth.ERROR);
         boolean offline = lastErrorKind == ConnectionErrorKind.UNREACHABLE;
         offlineTitle.setText(localAgentMode
                 ? R.string.local_agent_down_title
@@ -910,66 +913,61 @@ public class MainActivity extends AppCompatActivity {
      * one-shot scan never saw them (the user stared at a dead page).
      */
     private void scanForInvalidLink(WebView view) {
-        view.evaluateJavascript(
-                "(function(){var t=(document.body&&document.body.innerText)||'';"
-                + "if(t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)return 'invalid';"
-                + "if(t.indexOf('Connecting relay service')>=0)return 'connecting';"
-                // Desktop side disconnected mid-pairing or after it ended
-                // ("Desktop offline"/DEVICE_OFFLINE page with its own Try Again).
-                + "if(t.indexOf('DEVICE_OFFLINE')>=0||t.indexOf('Desktop offline')>=0)return 'desktop_offline';"
-                // Orphaned-link state: the linked desktop session ended and the
-                // web app silently drops the phone into its sessions/tasks menu
-                // (drawer markers present) with no chat composer anywhere.
-                + "var composer=document.querySelector('textarea,[contenteditable=\"true\"],[contenteditable=\"\"]');"
-                + "if(!composer){var nav=0;"
-                + "if(t.indexOf('Pinned tasks')>=0)nav++;"
-                + "if(t.indexOf('Automations')>=0)nav++;"
-                + "if(t.indexOf('Plugin Marketplace')>=0)nav++;"
-                + "if(t.indexOf('Task list')>=0)nav++;"
-                + "if(nav>=2)return 'menu';}"
-                + "return 'ok';})()",
-                value -> {
-                    if (value == null || mainFrameError || localAgentMode || isFinishing()) {
-                        return;
-                    }
-                    if (value.contains("invalid")) {
-                        showInvalidLink();
-                    } else if (value.contains("connecting")) {
-                        long elapsed = sessionLoadStartedAt == 0L
-                                ? Long.MAX_VALUE
-                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                        if (elapsed > 30000L) {
-                            showStuckConnecting();
-                        }
-                    } else if (value.contains("menu")) {
-                        // A fresh link briefly shows the drawer while the relay
-                        // handshake finishes; only a menu that PERSISTS means
-                        // the link's desktop session is gone.
-                        long elapsed = sessionLoadStartedAt == 0L
-                                ? Long.MAX_VALUE
-                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                        if (elapsed > 90000L) {
-                            showSessionEnded();
-                        }
-                    } else if (value.contains("desktop_offline")) {
-                        long elapsed = sessionLoadStartedAt == 0L
-                                ? Long.MAX_VALUE
-                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                        if (elapsed > 15000L) {
-                            showDeviceOffline();
-                        } else {
-                            // Transient right after load: keep trying quietly.
-                            scheduleOfflineReload();
-                        }
-                    } else if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
-                        // The page recovered (connected or moved on): drop the notice.
-                        stuckNoticeShown = false;
-                        orphanNoticeShown = false;
-                        deviceOfflineNoticeShown = false;
-                        mainHandler.removeCallbacks(offlineReload);
-                        hideError();
-                    }
-                });
+        PageScan.scan(view, (state, detail) -> {
+            if (state == null || state.isEmpty()
+                    || mainFrameError || localAgentMode || isFinishing()) {
+                return;
+            }
+            // Raw state first: the PC-side watchdog polls this through the
+            // bridge /status even while the app sits closed in the pocket.
+            SessionHealth.set(state);
+            SessionHealth.setDetail(detail);
+            if (PageScan.INVALID.equals(state)) {
+                showInvalidLink();
+            } else if (PageScan.CONNECTING.equals(state)) {
+                long elapsed = sessionLoadStartedAt == 0L
+                        ? Long.MAX_VALUE
+                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                // 60 s: slow relays and terminal restarts are common and the
+                // auto-retry usually lands — don't cry wolf at 30 s.
+                if (elapsed > 60000L) {
+                    showStuckConnecting();
+                }
+            } else if (PageScan.MENU.equals(state) || PageScan.NOSESSION.equals(state)) {
+                // A fresh link briefly shows the drawer (or a composer-less
+                // skeleton) while the relay handshake finishes; only a page
+                // that PERSISTS without the chat composer means the link's
+                // desktop session is gone — the PC watchdog's seturl push
+                // clears this by itself.
+                long elapsed = sessionLoadStartedAt == 0L
+                        ? Long.MAX_VALUE
+                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                if (elapsed > 90000L) {
+                    showSessionEnded();
+                }
+            } else if (PageScan.DESKTOP_OFFLINE.equals(state)
+                    || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
+                // Terminal not serving (offline or cloud-provisioning stuck):
+                // keep reloading the SAME link on backoff — it comes back by
+                // itself the moment the terminal does; a new link cannot help.
+                long elapsed = sessionLoadStartedAt == 0L
+                        ? Long.MAX_VALUE
+                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                if (elapsed > 15000L) {
+                    showDeviceOffline();
+                } else {
+                    // Transient right after load: keep trying quietly.
+                    scheduleOfflineReload();
+                }
+            } else if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
+                // The page recovered (connected or moved on): drop the notice.
+                stuckNoticeShown = false;
+                orphanNoticeShown = false;
+                deviceOfflineNoticeShown = false;
+                mainHandler.removeCallbacks(offlineReload);
+                hideError();
+            }
+        });
     }
 
     private void hideError() {
