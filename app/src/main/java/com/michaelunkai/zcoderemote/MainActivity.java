@@ -874,22 +874,22 @@ public class MainActivity extends AppCompatActivity {
             }
             // Hard-error pages ("Desktop offline / What happened / Try
             // Again", connection-invalid, timed-out): cover them with one
-            // calm line and auto-tap the SPA's own Try Again underneath —
-            // the owner must never read an error page or press anything.
+            // calm line — but never interfere with the SPA's own recovery.
             if (PageScan.INVALID.equals(state)
                     || PageScan.DESKTOP_OFFLINE.equals(state)
                     || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
-                coverErrorAndAutoRetry();
+                coverErrorAndPatientRetry(state);
             } else {
                 uncoverIfHealed();
             }
-            // NO OVERLAYS, EVER (owner directive 2026-10-25): every non-ok
-            // state is transient. The SPA reconnects IN-PAGE (fast); a full
-            // page reload restarts the whole slow handshake — so reload only
-            // when genuinely wedged: the same state held >=45 s AND no forced
-            // reload in the last 45 s. Otherwise stay out of the SPA's way.
+            // PATIENCE LAW (owner directive 2026-10-25: "connecting for ten
+            // minutes then error"): the SPA's in-page reconnect is the
+            // fastest recovery path — every forced reload or eager tap
+            // RESETS it and restarts the slow handshake from zero. The app
+            // never reloads on its own until the SAME state has wedged for
+            // a full 10 minutes (absolute last resort).
             long nowMs = SystemClock.elapsedRealtime();
-            if (nowMs - lastForcedReloadAt > 45000L && SessionHealth.ageSeconds() >= 45) {
+            if (nowMs - lastForcedReloadAt > 600000L && SessionHealth.ageSeconds() >= 600) {
                 lastForcedReloadAt = nowMs;
                 scheduleOfflineReload();
             }
@@ -923,16 +923,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Hard-error page visible: cover it and prompt the SPA to retry itself.
-     * Called from the health scan on desktop_offline / desktop_timedout /
-     * invalid — every pass (5 s while resumed) re-taps Try Again.
+     * Hard-error page visible: cover it — and stay patient. The SPA's own
+     * "Try Again" is tapped ONLY on its explicit timeout page
+     * (desktop_timedout) and only after that state has held 2 minutes; the
+     * offline page reconnects by itself, and tapping/resetting it
+     * mid-recovery is what made reconnects take "forever" (each tap
+     * restarts the slow handshake from zero).
      */
-    private void coverErrorAndAutoRetry() {
+    private void coverErrorAndPatientRetry(String state) {
         if (errorCover != null && !localAgentMode && !isFinishing()
                 && errorCover.getVisibility() != View.VISIBLE) {
             errorCover.setVisibility(View.VISIBLE);
         }
-        if (webView != null) {
+        if (webView != null
+                && PageScan.DESKTOP_TIMEDOUT.equals(state)
+                && SessionHealth.ageSeconds() >= 120) {
             webView.evaluateJavascript(TRY_AGAIN_JS, null);
         }
     }

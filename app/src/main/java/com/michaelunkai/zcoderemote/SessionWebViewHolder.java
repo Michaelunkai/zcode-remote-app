@@ -72,24 +72,32 @@ public final class SessionWebViewHolder {
                     SessionHealth.log(state);
                     if (PageScan.DESKTOP_OFFLINE.equals(state)
                             || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
-                        // Background self-heal: tap the SPA's own Try Again
-                        // so an offscreen page recovers without being opened.
-                        webView.evaluateJavascript(
-                                "(function(){var bs=document.querySelectorAll"
-                                + "('button,[role=button]');for(var i=0;i<bs.length;i++)"
-                                + "{var t=((bs[i].innerText||'')+' '+(bs[i]"
-                                + ".getAttribute('aria-label')||''));"
-                                + "if(/try again/i.test(t)){try{bs[i].click();}"
-                                + "catch(e){}return;}}})();", null);
+                        // PATIENCE LAW: the SPA reconnects in-page far
+                        // faster than anything we can force — reloads and
+                        // eager taps RESET its recovery. Offscreen we only
+                        // prompt Try Again after 2 minutes stuck on the
+                        // timeout page, and reload after 10 minutes wedged.
                         long now = SystemClock.elapsedRealtime();
                         if (desktopOfflineSince == 0L) {
                             desktopOfflineSince = now;
-                        } else if (now - desktopOfflineSince > 45000L) {
-                            desktopOfflineSince = 0L;
-                            String url = loadedUrl;
-                            if (!url.isEmpty()) {
-                                Log.i(TAG, "offscreen terminal not serving >45s; reloading idle page");
-                                reloadIfIdle(url);
+                        } else {
+                            long held = now - desktopOfflineSince;
+                            if (held > 600000L) {
+                                desktopOfflineSince = 0L;
+                                String url = loadedUrl;
+                                if (!url.isEmpty()) {
+                                    Log.i(TAG, "offscreen wedged >10min; last-resort reload");
+                                    reloadIfIdle(url);
+                                }
+                            } else if (held > 120000L
+                                    && PageScan.DESKTOP_TIMEDOUT.equals(state)) {
+                                webView.evaluateJavascript(
+                                        "(function(){var bs=document.querySelectorAll"
+                                        + "('button,[role=button]');for(var i=0;i<bs.length;i++)"
+                                        + "{var t=((bs[i].innerText||'')+' '+(bs[i]"
+                                        + ".getAttribute('aria-label')||''));"
+                                        + "if(/try again/i.test(t)){try{bs[i].click();}"
+                                        + "catch(e){}return;}}})();", null);
                             }
                         }
                     } else {
