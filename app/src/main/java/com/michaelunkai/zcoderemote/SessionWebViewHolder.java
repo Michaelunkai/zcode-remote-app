@@ -84,11 +84,11 @@ public final class SessionWebViewHolder {
                         long now = SystemClock.elapsedRealtime();
                         if (desktopOfflineSince == 0L) {
                             desktopOfflineSince = now;
-                        } else if (now - desktopOfflineSince > 75000L) {
+                        } else if (now - desktopOfflineSince > 45000L) {
                             desktopOfflineSince = 0L;
                             String url = loadedUrl;
                             if (!url.isEmpty()) {
-                                Log.i(TAG, "offscreen terminal not serving >20s; reloading idle page");
+                                Log.i(TAG, "offscreen terminal not serving >45s; reloading idle page");
                                 reloadIfIdle(url);
                             }
                         }
@@ -200,6 +200,25 @@ public final class SessionWebViewHolder {
                 @Override
                 public void onPageStarted(WebView v, String pageUrl, android.graphics.Bitmap favicon) {
                     Log.i(TAG, "idle page started loading");
+                }
+
+                @Override
+                public void onReceivedError(WebView v, android.webkit.WebResourceRequest request,
+                        android.webkit.WebResourceError error) {
+                    // The offscreen page's load failed (network blip, DNS):
+                    // without this, Chromium's gray "Web page not available"
+                    // renders offscreen — and the next app-open adopts that
+                    // broken view straight onto the user's screen. Mark it
+                    // and schedule an immediate reload so the adopted view is
+                    // always a live (or loading) page.
+                    if (request.isForMainFrame()) {
+                        Log.w(TAG, "idle main-frame load failed; retrying in 3s");
+                        SessionHealth.set(SessionHealth.ERROR);
+                        final String url = loadedUrl;
+                        if (!url.isEmpty()) {
+                            MAIN.postDelayed(() -> ensureLoaded(v.getContext(), url), 3000L);
+                        }
+                    }
                 }
 
                 @Override

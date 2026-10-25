@@ -316,6 +316,14 @@ public class MainActivity extends AppCompatActivity {
         webView = shared;
         parent.addView(webView, index, params);
         lastLoadedUrl = target;
+        // Never adopt a broken page: if the offscreen load failed (network
+        // blip, "web page not available"), reload it now instead of showing
+        // Chromium's error screen to the user.
+        if (SessionHealth.ERROR.equals(SessionHealth.state())
+                || PageScan.INVALID.equals(SessionHealth.state())) {
+            loadEffectiveUrl();
+            return;
+        }
         // The page already finished offscreen: re-bind the scroll watcher now
         // (onPageFinished will not re-fire for an already-loaded page).
         innerScrolledUp = false;
@@ -878,10 +886,10 @@ public class MainActivity extends AppCompatActivity {
             // NO OVERLAYS, EVER (owner directive 2026-10-25): every non-ok
             // state is transient. The SPA reconnects IN-PAGE (fast); a full
             // page reload restarts the whole slow handshake — so reload only
-            // when genuinely wedged: the same state held >=75 s AND no forced
-            // reload in the last 75 s. Otherwise stay out of the SPA's way.
+            // when genuinely wedged: the same state held >=45 s AND no forced
+            // reload in the last 45 s. Otherwise stay out of the SPA's way.
             long nowMs = SystemClock.elapsedRealtime();
-            if (nowMs - lastForcedReloadAt > 75000L && SessionHealth.ageSeconds() >= 75) {
+            if (nowMs - lastForcedReloadAt > 45000L && SessionHealth.ageSeconds() >= 45) {
                 lastForcedReloadAt = nowMs;
                 scheduleOfflineReload();
             }
