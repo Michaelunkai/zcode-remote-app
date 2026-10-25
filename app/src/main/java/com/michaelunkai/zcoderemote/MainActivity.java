@@ -807,92 +807,6 @@ public class MainActivity extends AppCompatActivity {
         scheduleAutoRetry();
     }
 
-    /**
-     * The PC rotated the remote link: the page loads fine but the session is
-     * dead ("Mobile Connection Invalid"/AUTH_FAILED). Retrying cannot fix it —
-     * stop the retry loop and point the user at Change URL instead.
-     */
-    private void showInvalidLink() {
-        mainHandler.removeCallbacks(autoRetry);
-        mainHandler.removeCallbacks(offlineReload);
-        offlineTitle.setVisibility(View.VISIBLE);
-        offlineTitle.setText(R.string.invalid_link_title);
-        errorMessage.setText(getString(R.string.invalid_link_hint));
-        btnBackSession.setVisibility(View.GONE);
-        errorOverlay.setVisibility(View.VISIBLE);
-        progressBar.setVisibility(View.GONE);
-        swipeRefresh.setRefreshing(false);
-    }
-
-    /**
-     * The relay wizard rendered but never finishes (dead link left hanging,
-     * relay unreachable from this network): after 30 s of silence, tell the
-     * user what to do instead of an eternal spinner. Auto-retry keeps
-     * running — a network blip heals itself on the next reload.
-     */
-    private void showStuckConnecting() {
-        if (stuckNoticeShown) {
-            return;
-        }
-        stuckNoticeShown = true;
-        offlineTitle.setVisibility(View.VISIBLE);
-        offlineTitle.setText(R.string.still_connecting_title);
-        errorMessage.setText(getString(R.string.still_connecting_hint));
-        btnBackSession.setVisibility(View.GONE);
-        errorOverlay.setVisibility(View.VISIBLE);
-        progressBar.setVisibility(View.GONE);
-        swipeRefresh.setRefreshing(false);
-        scheduleAutoRetry();
-    }
-
-    /**
-     * The link's desktop session has ended: the web app silently drops the
-     * phone into its sessions/tasks menu instead of the chat (orphaned link,
-     * live-verified 2026-10-20). After 90 s stranded in that menu, say so
-     * and keep auto-retrying — the PC's zero-tap seturl push reloads the
-     * fresh link and this overlay clears by itself.
-     */
-    private void showSessionEnded() {
-        if (orphanNoticeShown) {
-            return;
-        }
-        orphanNoticeShown = true;
-        offlineTitle.setVisibility(View.VISIBLE);
-        offlineTitle.setText(R.string.session_ended_title);
-        errorMessage.setText(getString(R.string.session_ended_hint));
-        btnBackSession.setVisibility(View.GONE);
-        errorOverlay.setVisibility(View.VISIBLE);
-        progressBar.setVisibility(View.GONE);
-        swipeRefresh.setRefreshing(false);
-        scheduleAutoRetry();
-    }
-
-    /**
-     * The page loaded and the relay answered, but the desktop side is gone
-     * ("Desktop offline"/DEVICE_OFFLINE — live-seen 2026-10-25 right after a
-     * desktop pairing ended). The link itself is still valid, so unlike an
-     * invalid link this heals BY ITSELF: keep reloading on a capped backoff —
-     * the moment Web remote control runs again on the desktop, the session
-     * resumes with zero taps. Scan QR stays one tap away for the case where
-     * the desktop rotated the link instead.
-     */
-    private void showDeviceOffline() {
-        deviceOfflineNoticeShown = true;
-        offlineTitle.setVisibility(View.VISIBLE);
-        offlineTitle.setText(R.string.device_offline_title);
-        errorMessage.setText(getString(R.string.device_offline_hint));
-        btnBackSession.setVisibility(View.GONE);
-        errorOverlay.setVisibility(View.VISIBLE);
-        progressBar.setVisibility(View.GONE);
-        swipeRefresh.setRefreshing(false);
-        scheduleOfflineReload();
-    }
-
-    /**
-     * Reload loop for page-loaded-but-desktop-offline: autoRetryOnce refuses
-     * to run without a main-frame error, and without a reload the phone would
-     * never notice the desktop's remote side coming back.
-     */
     private void scheduleOfflineReload() {
         mainHandler.removeCallbacks(offlineReload);
         long delayMs = Math.min(20000L, 10000L + 2000L * Math.min(retryAttempt, 5));
@@ -922,51 +836,24 @@ public class MainActivity extends AppCompatActivity {
             // bridge /status even while the app sits closed in the pocket.
             SessionHealth.set(state);
             SessionHealth.setDetail(detail);
-            if (PageScan.INVALID.equals(state)) {
-                showInvalidLink();
-            } else if (PageScan.CONNECTING.equals(state)) {
-                long elapsed = sessionLoadStartedAt == 0L
-                        ? Long.MAX_VALUE
-                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                // 60 s: slow relays and terminal restarts are common and the
-                // auto-retry usually lands — don't cry wolf at 30 s.
-                if (elapsed > 60000L) {
-                    showStuckConnecting();
+            if (PageScan.OK.equals(state)) {
+                if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
+                    stuckNoticeShown = false;
+                    orphanNoticeShown = false;
+                    deviceOfflineNoticeShown = false;
+                    mainHandler.removeCallbacks(offlineReload);
+                    hideError();
                 }
-            } else if (PageScan.MENU.equals(state) || PageScan.NOSESSION.equals(state)) {
-                // A fresh link briefly shows the drawer (or a composer-less
-                // skeleton) while the relay handshake finishes; only a page
-                // that PERSISTS without the chat composer means the link's
-                // desktop session is gone — the PC watchdog's seturl push
-                // clears this by itself.
-                long elapsed = sessionLoadStartedAt == 0L
-                        ? Long.MAX_VALUE
-                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                if (elapsed > 90000L) {
-                    showSessionEnded();
-                }
-            } else if (PageScan.DESKTOP_OFFLINE.equals(state)
-                    || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
-                // Terminal not serving (offline or cloud-provisioning stuck):
-                // keep reloading the SAME link on backoff — it comes back by
-                // itself the moment the terminal does; a new link cannot help.
-                long elapsed = sessionLoadStartedAt == 0L
-                        ? Long.MAX_VALUE
-                        : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
-                if (elapsed > 15000L) {
-                    showDeviceOffline();
-                } else {
-                    // Transient right after load: keep trying quietly.
-                    scheduleOfflineReload();
-                }
-            } else if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
-                // The page recovered (connected or moved on): drop the notice.
-                stuckNoticeShown = false;
-                orphanNoticeShown = false;
-                deviceOfflineNoticeShown = false;
-                mainHandler.removeCallbacks(offlineReload);
-                hideError();
+                return;
             }
+            // NO OVERLAYS, EVER (owner directive 2026-10-25): every non-ok
+            // state — connecting, menu/nosession disconnect screens,
+            // desktop_offline, desktop_timedout, even invalid — is transient
+            // from the app's point of view. The SPA's own screens are the
+            // only UI the user sees; this app just keeps a capped reload
+            // heartbeat so a stuck page keeps trying, and the PC watchdog
+            // heals wedges (panel-free restart-heal) when needed.
+            scheduleOfflineReload();
         });
     }
 
