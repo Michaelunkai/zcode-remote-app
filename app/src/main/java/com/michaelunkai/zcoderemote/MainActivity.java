@@ -140,7 +140,6 @@ public class MainActivity extends AppCompatActivity {
     private boolean stuckNoticeShown = false;
     private boolean orphanNoticeShown = false;
     private boolean deviceOfflineNoticeShown = false;
-    private View errorCover;
     private ViewGroup webViewHomeParent;
     private int webViewHomeIndex = -1;
     private ViewGroup.LayoutParams webViewHomeParams;
@@ -250,8 +249,6 @@ public class MainActivity extends AppCompatActivity {
         Button btnScanQr = findViewById(R.id.btn_scan_qr);
         btnScanQr.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, QrScanActivity.class)));
-
-        errorCover = buildErrorCover();
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -878,7 +875,7 @@ public class MainActivity extends AppCompatActivity {
             if (PageScan.INVALID.equals(state)
                     || PageScan.DESKTOP_OFFLINE.equals(state)
                     || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
-                coverErrorAndPatientRetry(state);
+                recoverGiveUpPage(state);
             } else {
                 uncoverIfHealed();
             }
@@ -897,61 +894,38 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Static, minimal cover for the SPA's hard-error pages ("Desktop
-     * offline / What happened / Try Again"). No spinner, no counter — just
-     * one calm line while the app auto-taps Try Again underneath. Owner
-     * directive 2026-10-25: those error pages must never be readable again.
+     * GIVE-UP PAGES: "Desktop offline / What happened / Try Again" only
+     * renders after the SPA exhausted its own retries — tapping Try Again
+     * there cannot interrupt anything (nothing is in flight); it flips the
+     * page straight back into its real connecting UI. The timeout page
+     * gets 60 s of grace first. Active reconnects are never touched, and
+     * the app draws NOTHING over the page: the SPA's own screens (workspace
+     * or connecting flow) are the only screens the owner ever sees.
      */
-    private View buildErrorCover() {
-        android.widget.FrameLayout cover = new android.widget.FrameLayout(this);
-        cover.setBackgroundColor(0xF20F0E17);
-        cover.setClickable(true);
-        TextView label = new TextView(this);
-        label.setText("Reconnecting to your desktop…");
-        label.setTextColor(0xFFB9B4D0);
-        label.setTextSize(16);
-        label.setGravity(android.view.Gravity.CENTER);
-        cover.addView(label, new android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-        cover.setVisibility(View.GONE);
-        android.view.ViewGroup content = findViewById(android.R.id.content);
-        content.addView(cover, new android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-        return cover;
-    }
-
-    /**
-     * Hard-error page visible: cover it — and stay patient. The SPA's own
-     * "Try Again" is tapped ONLY on its explicit timeout page
-     * (desktop_timedout) and only after that state has held 2 minutes; the
-     * offline page reconnects by itself, and tapping/resetting it
-     * mid-recovery is what made reconnects take "forever" (each tap
-     * restarts the slow handshake from zero).
-     */
-    private void coverErrorAndPatientRetry(String state) {
-        if (errorCover != null && !localAgentMode && !isFinishing()
-                && errorCover.getVisibility() != View.VISIBLE) {
-            errorCover.setVisibility(View.VISIBLE);
+    private void recoverGiveUpPage(String state) {
+        if (webView == null) {
+            return;
         }
-        if (webView != null
-                && PageScan.DESKTOP_TIMEDOUT.equals(state)
-                && SessionHealth.ageSeconds() >= 120) {
+        long age = SessionHealth.ageSeconds();
+        if (PageScan.DESKTOP_OFFLINE.equals(state)) {
             webView.evaluateJavascript(TRY_AGAIN_JS, null);
+            if (age >= 180) {
+                lastForcedReloadAt = SystemClock.elapsedRealtime();
+                scheduleOfflineReload();
+            }
+        } else if (PageScan.DESKTOP_TIMEDOUT.equals(state) && age >= 60) {
+            webView.evaluateJavascript(TRY_AGAIN_JS, null);
+            if (age >= 300) {
+                lastForcedReloadAt = SystemClock.elapsedRealtime();
+                scheduleOfflineReload();
+            }
         }
     }
 
     private void uncoverIfHealed() {
-        if (errorCover != null && errorCover.getVisibility() == View.VISIBLE) {
-            errorCover.setVisibility(View.GONE);
-        }
     }
 
     private void hideError() {
         errorOverlay.setVisibility(View.GONE);
-        if (errorCover != null) {
-            errorCover.setVisibility(View.GONE);
-        }
     }
 }
