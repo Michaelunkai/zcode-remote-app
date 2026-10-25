@@ -140,9 +140,23 @@ public class MainActivity extends AppCompatActivity {
     private boolean stuckNoticeShown = false;
     private boolean orphanNoticeShown = false;
     private boolean deviceOfflineNoticeShown = false;
+    private View errorCover;
     private ViewGroup webViewHomeParent;
     private int webViewHomeIndex = -1;
     private ViewGroup.LayoutParams webViewHomeParams;
+
+    /**
+     * Auto-tap the SPA's own "Try Again" on its hard-error pages: the page
+     * heals itself when prompted, so the app prompts it — nobody should ever
+     * have to read "Desktop offline / What happened" or press anything.
+     */
+    private static final String TRY_AGAIN_JS =
+            "(function(){var bs=document.querySelectorAll('button,[role=button]');"
+            + "for(var i=0;i<bs.length;i++){var t=((bs[i].innerText||'')+' '"
+            + "+(bs[i].getAttribute('aria-label')||''));"
+            + "if(/try again/i.test(t)){try{bs[i].click();}catch(e){}"
+            + "return 'tapped';}}"
+            + "return 'none';})();";
 
     /**
      * Continuous page health scan (while resumed): surfaces the rotation-
@@ -236,6 +250,8 @@ public class MainActivity extends AppCompatActivity {
         Button btnScanQr = findViewById(R.id.btn_scan_qr);
         btnScanQr.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, QrScanActivity.class)));
+
+        errorCover = buildErrorCover();
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -838,6 +854,7 @@ public class MainActivity extends AppCompatActivity {
             SessionHealth.set(state);
             SessionHealth.setDetail(detail);
             if (PageScan.OK.equals(state)) {
+                uncoverIfHealed();
                 if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
                     stuckNoticeShown = false;
                     orphanNoticeShown = false;
@@ -846,6 +863,17 @@ public class MainActivity extends AppCompatActivity {
                     hideError();
                 }
                 return;
+            }
+            // Hard-error pages ("Desktop offline / What happened / Try
+            // Again", connection-invalid, timed-out): cover them with one
+            // calm line and auto-tap the SPA's own Try Again underneath —
+            // the owner must never read an error page or press anything.
+            if (PageScan.INVALID.equals(state)
+                    || PageScan.DESKTOP_OFFLINE.equals(state)
+                    || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
+                coverErrorAndAutoRetry();
+            } else {
+                uncoverIfHealed();
             }
             // NO OVERLAYS, EVER (owner directive 2026-10-25): every non-ok
             // state is transient. The SPA reconnects IN-PAGE (fast); a full
@@ -860,7 +888,57 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Static, minimal cover for the SPA's hard-error pages ("Desktop
+     * offline / What happened / Try Again"). No spinner, no counter — just
+     * one calm line while the app auto-taps Try Again underneath. Owner
+     * directive 2026-10-25: those error pages must never be readable again.
+     */
+    private View buildErrorCover() {
+        android.widget.FrameLayout cover = new android.widget.FrameLayout(this);
+        cover.setBackgroundColor(0xF20F0E17);
+        cover.setClickable(true);
+        TextView label = new TextView(this);
+        label.setText("Reconnecting to your desktop…");
+        label.setTextColor(0xFFB9B4D0);
+        label.setTextSize(16);
+        label.setGravity(android.view.Gravity.CENTER);
+        cover.addView(label, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        cover.setVisibility(View.GONE);
+        android.view.ViewGroup content = findViewById(android.R.id.content);
+        content.addView(cover, new android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        return cover;
+    }
+
+    /**
+     * Hard-error page visible: cover it and prompt the SPA to retry itself.
+     * Called from the health scan on desktop_offline / desktop_timedout /
+     * invalid — every pass (5 s while resumed) re-taps Try Again.
+     */
+    private void coverErrorAndAutoRetry() {
+        if (errorCover != null && !localAgentMode && !isFinishing()
+                && errorCover.getVisibility() != View.VISIBLE) {
+            errorCover.setVisibility(View.VISIBLE);
+        }
+        if (webView != null) {
+            webView.evaluateJavascript(TRY_AGAIN_JS, null);
+        }
+    }
+
+    private void uncoverIfHealed() {
+        if (errorCover != null && errorCover.getVisibility() == View.VISIBLE) {
+            errorCover.setVisibility(View.GONE);
+        }
+    }
+
     private void hideError() {
         errorOverlay.setVisibility(View.GONE);
+        if (errorCover != null) {
+            errorCover.setVisibility(View.GONE);
+        }
     }
 }

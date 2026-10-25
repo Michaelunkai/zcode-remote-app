@@ -72,6 +72,15 @@ public final class SessionWebViewHolder {
                     SessionHealth.log(state);
                     if (PageScan.DESKTOP_OFFLINE.equals(state)
                             || PageScan.DESKTOP_TIMEDOUT.equals(state)) {
+                        // Background self-heal: tap the SPA's own Try Again
+                        // so an offscreen page recovers without being opened.
+                        webView.evaluateJavascript(
+                                "(function(){var bs=document.querySelectorAll"
+                                + "('button,[role=button]');for(var i=0;i<bs.length;i++)"
+                                + "{var t=((bs[i].innerText||'')+' '+(bs[i]"
+                                + ".getAttribute('aria-label')||''));"
+                                + "if(/try again/i.test(t)){try{bs[i].click();}"
+                                + "catch(e){}return;}}})();", null);
                         long now = SystemClock.elapsedRealtime();
                         if (desktopOfflineSince == 0L) {
                             desktopOfflineSince = now;
