@@ -150,6 +150,29 @@ public class MainActivity extends AppCompatActivity {
      * invalid page and the never-finishing relay wizard as actionable
      * overlays instead of leaving the user on a dead silent screen.
      */
+    /**
+     * Drives the reconnecting veil from the process-wide health state every
+     * 2 s — independent of scan callbacks, so reopening the app mid-outage
+     * covers the SPA's error page immediately (owner directive: the scary
+     * pages must never be visible).
+     */
+    private final Runnable veilTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (isFinishing()) {
+                return;
+            }
+            String state = SessionHealth.state();
+            boolean retrying = !state.isEmpty() && !PageScan.OK.equals(state)
+                    && !SessionHealth.LOCAL_AGENT.equals(state)
+                    && SessionHealth.ageSeconds() >= 5;
+            if (reconnectVeil != null && !localAgentMode) {
+                reconnectVeil.setVisibility(retrying ? View.VISIBLE : View.GONE);
+            }
+            mainHandler.postDelayed(this, 2000L);
+        }
+    };
+
     private final Runnable pageHealthCheck = new Runnable() {
         @Override
         public void run() {
@@ -578,6 +601,8 @@ public class MainActivity extends AppCompatActivity {
         } else if (!effective.equals(lastLoadedUrl) || webView.getUrl() == null) {
             loadEffectiveUrl();
         }
+        mainHandler.removeCallbacks(veilTicker);
+        mainHandler.post(veilTicker);
         if (!localAgentMode) {
             restartPageHealthChecks();
         }
@@ -589,6 +614,7 @@ public class MainActivity extends AppCompatActivity {
         // Foreground-only polling: zero battery cost while backgrounded.
         stopPcProbe();
         mainHandler.removeCallbacks(pageHealthCheck);
+        mainHandler.removeCallbacks(veilTicker);
     }
 
     @Override
