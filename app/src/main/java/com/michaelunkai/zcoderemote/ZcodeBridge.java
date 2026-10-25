@@ -34,6 +34,20 @@ public class ZcodeBridge {
         return "zcode-android-ok";
     }
 
+    /**
+     * ProjectsBar self-reporting: the injected quick-bar sends what it sees
+     * (visible menu structure, no URL, no message content beyond short menu
+     * labels) so the PC agent can verify the archive automation over logcat.
+     */
+    @JavascriptInterface
+    public void reportScan(String json) {
+        String scan = json == null ? "" : json;
+        if (scan.length() > 120000) {
+            scan = scan.substring(0, 120000);
+        }
+        WebScan.set(scan);
+    }
+
     /** where: back|home|recents|notifications|quickSettings|power|lock */
     @JavascriptInterface
     public void nav(String where) {

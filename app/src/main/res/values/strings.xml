@@ -3,6 +3,9 @@
     <string name="app_name">ZCode</string>
     <string name="shortcut_set_url">Change server URL</string>
     <string name="shortcut_control_panel">Device control</string>
+    <string name="shortcut_scan_qr">Scan QR code</string>
+    <string name="btn_scan_qr">Scan QR code</string>
+    <string name="scan_qr_prompt">Point the camera at the ZCode desktop QR code</string>
     <string name="error_title">Connection problem</string>
     <string name="error_generic">The ZCode remote session could not be loaded.</string>
     <string name="btn_retry">Retry</string>
@@ -20,6 +23,8 @@
     <string name="still_connecting_hint">The relay page has not finished connecting after 30 seconds. If this screen never finishes, the link has expired — ask the PC to push a fresh link (zphone seturl), or tap Change URL. Retry keeps running automatically.</string>
     <string name="session_ended_title">Desktop session ended</string>
     <string name="session_ended_hint">This link points to a desktop session that has finished, so the app landed on the sessions menu instead of the chat. The PC can push a fresh link automatically (zphone seturl) — Retry keeps running and this clears by itself, or tap Change URL.</string>
+    <string name="device_offline_title">Desktop remote is off</string>
+    <string name="device_offline_hint">The page reports the desktop side disconnected (DEVICE_OFFLINE). This heals by itself: the app keeps reconnecting, so the moment Web remote control is running again on the desktop, the session resumes with zero taps. To re-pair right now: open “Mobile remote control” on the desktop and tap “Scan QR code” here — the link only lives for about a minute, so scan while the QR is on screen.</string>
     <string name="return_notice">● PC is back — tap to return to the session</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save &amp; Open</string>

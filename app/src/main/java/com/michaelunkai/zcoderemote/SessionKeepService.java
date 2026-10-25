@@ -9,7 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -28,6 +30,16 @@ public class SessionKeepService extends Service {
     public static final String CHANNEL_READY = "session_ready";
 
     private static final int NOTIFICATION_ID = 40;
+
+    private final Handler main = new Handler(Looper.getMainLooper());
+    /** Re-pins the offscreen keep-visible window if the system dropped it. */
+    private final Runnable overlayWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            SessionWebViewHolder.ensureOverlayAlive();
+            main.postDelayed(this, 60000L);
+        }
+    };
 
     /** Starts (or refreshes the heartbeat of) the keep-alive service if enabled. */
     public static void start(Context context) {
@@ -51,10 +63,12 @@ public class SessionKeepService extends Service {
         super.onCreate();
         createChannels(this);
         ZphoneServer.start(this);
+        main.post(overlayWatchdog);
     }
 
     @Override
     public void onDestroy() {
+        main.removeCallbacks(overlayWatchdog);
         ZphoneServer.stop();
         super.onDestroy();
     }

@@ -11,7 +11,13 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <queries>
         <intent>
@@ -53,6 +59,14 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+
+        <!-- QR pairing scanner: exported so adb (or a launcher shortcut) can
+             pop it open while the desktop QR panel is on screen; a valid scan
+             is saved and the live session opens immediately. -->
+        <activity
+            android:name=".QrScanActivity"
+            android:exported="true"
+            android:theme="@style/Theme.ZCodeRemote" />
 
         <!-- Process warm-up after reboot / app update: the next icon tap is a
              warm resume (<1 s) instead of a cold page handshake (~9 s).

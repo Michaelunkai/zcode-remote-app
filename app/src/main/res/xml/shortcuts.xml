@@ -22,4 +22,15 @@
             android:targetClass="com.michaelunkai.zcoderemote.DevicePanelActivity"
             android:targetPackage="com.michaelunkai.zcoderemote" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_link"
+        android:shortcutId="scan_qr"
+        android:shortcutLongLabel="@string/shortcut_scan_qr"
+        android:shortcutShortLabel="@string/shortcut_scan_qr">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="com.michaelunkai.zcoderemote.QrScanActivity"
+            android:targetPackage="com.michaelunkai.zcoderemote" />
+    </shortcut>
 </shortcuts>

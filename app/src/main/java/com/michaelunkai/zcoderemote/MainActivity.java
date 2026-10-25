@@ -103,6 +103,15 @@ public class MainActivity extends AppCompatActivity {
             + "return 'ok';"
             + "})();";
 
+    /**
+     * The SPA pauses its relay heartbeat when it believes the page is hidden
+     * (document.hidden). Android flips that on every backgrounding/lock;
+     * spoof the getters so the page always reports visible — combined with
+     * SessionWebViewHolder's offscreen overlay window this keeps the session
+     * alive in background and with the screen off.
+     */
+    private static final String VISIBILITY_JS = SessionWebViewHolder.VISIBILITY_JS;
+
     private UrlStore urlStore;
     private WebView webView;
     private SwipeRefreshGate swipeRefresh;
@@ -123,11 +132,16 @@ public class MainActivity extends AppCompatActivity {
     private long lastScrollProbeAt = 0L;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoRetry = this::autoRetryOnce;
+    private final Runnable offlineReload = this::offlineReloadOnce;
     private int retryAttempt = 0;
     private int pageChecksRemaining = 0;
     private long sessionLoadStartedAt = 0L;
     private boolean stuckNoticeShown = false;
     private boolean orphanNoticeShown = false;
+    private boolean deviceOfflineNoticeShown = false;
+    private ViewGroup webViewHomeParent;
+    private int webViewHomeIndex = -1;
+    private ViewGroup.LayoutParams webViewHomeParams;
 
     /**
      * Continuous page health scan (while resumed): surfaces the rotation-
@@ -177,6 +191,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         urlStore = new UrlStore(this);
+        AccessibilityHealer.heal(this);
         webView = findViewById(R.id.web_view);
         swipeRefresh = findViewById(R.id.swipe_refresh);
         progressBar = findViewById(R.id.progress_bar);
@@ -217,6 +232,9 @@ public class MainActivity extends AppCompatActivity {
         });
         btnBackSession.setOnClickListener(v -> exitLocalAgent());
         returnNotice.setOnClickListener(v -> exitLocalAgent());
+        Button btnScanQr = findViewById(R.id.btn_scan_qr);
+        btnScanQr.setOnClickListener(v ->
+                startActivity(new Intent(MainActivity.this, QrScanActivity.class)));
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -286,6 +304,7 @@ public class MainActivity extends AppCompatActivity {
         innerScrolledUp = false;
         webView.evaluateJavascript(SCROLL_WATCHER_JS, null);
         webView.evaluateJavascript(VIEWPORT_FIT_JS, null);
+        webView.evaluateJavascript(VISIBILITY_JS, null);
     }
 
     private void configureWebViewSettings() {
@@ -356,6 +375,7 @@ public class MainActivity extends AppCompatActivity {
                 innerScrolledUp = false;
                 view.evaluateJavascript(SCROLL_WATCHER_JS, null);
                 view.evaluateJavascript(VIEWPORT_FIT_JS, null);
+                view.evaluateJavascript(VISIBILITY_JS, null);
                 if (mainFrameError) {
                     mainFrameError = false;
                 } else {
@@ -499,6 +519,37 @@ public class MainActivity extends AppCompatActivity {
         Matcher matcher = HTTP_URL_PATTERN.matcher(sharedText);
         if (matcher.find() && urlStore.save(matcher.group())) {
             loadEffectiveUrl();
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Take the session view back from the offscreen overlay window (see
+        // onStop) so it is live in our layout before onResume runs.
+        if (webView != null && webViewHomeParent != null
+                && webView.getParent() == null) {
+            webViewHomeParent.addView(webView, webViewHomeIndex, webViewHomeParams);
+        }
+        webViewHomeParent = null;
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // A stopped activity hides its window, Chromium marks the page hidden
+        // and the relay heartbeat throttles to death. Hop the session view
+        // into the holder's offscreen overlay (page stays VISIBLE) and take
+        // it back in onStart; the layout slot is remembered for the swap.
+        if (isChangingConfigurations() || webView == null || localAgentMode) {
+            return;
+        }
+        ViewGroup parent = (ViewGroup) webView.getParent();
+        if (parent != null) {
+            webViewHomeParent = parent;
+            webViewHomeIndex = parent.indexOfChild(webView);
+            webViewHomeParams = webView.getLayoutParams();
+            SessionWebViewHolder.detachToOverlay(webView);
         }
     }
 
@@ -760,6 +811,7 @@ public class MainActivity extends AppCompatActivity {
      */
     private void showInvalidLink() {
         mainHandler.removeCallbacks(autoRetry);
+        mainHandler.removeCallbacks(offlineReload);
         offlineTitle.setVisibility(View.VISIBLE);
         offlineTitle.setText(R.string.invalid_link_title);
         errorMessage.setText(getString(R.string.invalid_link_hint));
@@ -813,6 +865,45 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
+     * The page loaded and the relay answered, but the desktop side is gone
+     * ("Desktop offline"/DEVICE_OFFLINE — live-seen 2026-10-25 right after a
+     * desktop pairing ended). The link itself is still valid, so unlike an
+     * invalid link this heals BY ITSELF: keep reloading on a capped backoff —
+     * the moment Web remote control runs again on the desktop, the session
+     * resumes with zero taps. Scan QR stays one tap away for the case where
+     * the desktop rotated the link instead.
+     */
+    private void showDeviceOffline() {
+        deviceOfflineNoticeShown = true;
+        offlineTitle.setVisibility(View.VISIBLE);
+        offlineTitle.setText(R.string.device_offline_title);
+        errorMessage.setText(getString(R.string.device_offline_hint));
+        btnBackSession.setVisibility(View.GONE);
+        errorOverlay.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.GONE);
+        swipeRefresh.setRefreshing(false);
+        scheduleOfflineReload();
+    }
+
+    /**
+     * Reload loop for page-loaded-but-desktop-offline: autoRetryOnce refuses
+     * to run without a main-frame error, and without a reload the phone would
+     * never notice the desktop's remote side coming back.
+     */
+    private void scheduleOfflineReload() {
+        mainHandler.removeCallbacks(offlineReload);
+        long delayMs = Math.min(20000L, 10000L + 2000L * Math.min(retryAttempt, 5));
+        mainHandler.postDelayed(offlineReload, delayMs);
+    }
+
+    private void offlineReloadOnce() {
+        if (!mainFrameError && !localAgentMode && !isFinishing()
+                && !urlStore.get().isEmpty()) {
+            retryCurrentTarget();
+        }
+    }
+
+    /**
      * Scans the loaded session page for failure markers. Runs once at page
      * finish and then periodically while resumed: the rotation-invalid page
      * and the hung relay wizard both render LONG AFTER onPageFinished, so a
@@ -823,6 +914,9 @@ public class MainActivity extends AppCompatActivity {
                 "(function(){var t=(document.body&&document.body.innerText)||'';"
                 + "if(t.indexOf('Connection Invalid')>=0||t.indexOf('AUTH_FAILED')>=0)return 'invalid';"
                 + "if(t.indexOf('Connecting relay service')>=0)return 'connecting';"
+                // Desktop side disconnected mid-pairing or after it ended
+                // ("Desktop offline"/DEVICE_OFFLINE page with its own Try Again).
+                + "if(t.indexOf('DEVICE_OFFLINE')>=0||t.indexOf('Desktop offline')>=0)return 'desktop_offline';"
                 // Orphaned-link state: the linked desktop session ended and the
                 // web app silently drops the phone into its sessions/tasks menu
                 // (drawer markers present) with no chat composer anywhere.
@@ -857,10 +951,22 @@ public class MainActivity extends AppCompatActivity {
                         if (elapsed > 90000L) {
                             showSessionEnded();
                         }
-                    } else if (stuckNoticeShown || orphanNoticeShown) {
+                    } else if (value.contains("desktop_offline")) {
+                        long elapsed = sessionLoadStartedAt == 0L
+                                ? Long.MAX_VALUE
+                                : SystemClock.elapsedRealtime() - sessionLoadStartedAt;
+                        if (elapsed > 15000L) {
+                            showDeviceOffline();
+                        } else {
+                            // Transient right after load: keep trying quietly.
+                            scheduleOfflineReload();
+                        }
+                    } else if (stuckNoticeShown || orphanNoticeShown || deviceOfflineNoticeShown) {
                         // The page recovered (connected or moved on): drop the notice.
                         stuckNoticeShown = false;
                         orphanNoticeShown = false;
+                        deviceOfflineNoticeShown = false;
+                        mainHandler.removeCallbacks(offlineReload);
                         hideError();
                     }
                 });

@@ -28,6 +28,7 @@ public class RestartReceiver extends BroadcastReceiver {
             return;
         }
         try {
+            AccessibilityHealer.heal(context);
             SessionKeepService.start(context);
             Log.i(TAG, "keep-alive restored after " + action);
         } catch (Throwable t) {

@@ -2,12 +2,17 @@ package com.michaelunkai.zcoderemote;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.PixelFormat;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -37,7 +42,21 @@ public final class SessionWebViewHolder {
     private static String loadedUrl = "";
     private static boolean attached = false;   // currently parented into an activity
     private static boolean destroyed = false;  // renderer/view unusable
+    private static boolean inOverlay = false;  // pinned in the offscreen keep-visible window
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    /**
+     * Injected on every load: the SPA pauses its relay heartbeat when it
+     * believes the page is hidden (document.hidden / visibilityState), and
+     * Android flips those on every backgrounding and screen-off. Spoof the
+     * getters so the page always reports visible — combined with the
+     * offscreen overlay pin below, the session survives background and lock.
+     */
+    public static final String VISIBILITY_JS =
+            "(function(){try{"
+            + "Object.defineProperty(document,'hidden',{get:function(){return false;},configurable:true});"
+            + "Object.defineProperty(document,'visibilityState',{get:function(){return 'visible';},configurable:true});"
+            + "}catch(e){}})();";
 
     private SessionWebViewHolder() {
     }
@@ -107,6 +126,7 @@ public final class SessionWebViewHolder {
             view.setWebViewClient(new WebViewClient() {
                 @Override
                 public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
+                    removeFromOverlay();
                     destroyed = true;
                     webView = null;
                     loadedUrl = "";
@@ -117,6 +137,7 @@ public final class SessionWebViewHolder {
 
                 @Override
                 public void onPageFinished(WebView v, String pageUrl) {
+                    v.evaluateJavascript(VISIBILITY_JS, null);
                     Log.i(TAG, "prewarmed page finished: " + (pageUrl == null ? "?" : "ok"));
                 }
             });
@@ -142,6 +163,7 @@ public final class SessionWebViewHolder {
         if (webView == null || destroyed) {
             return null;
         }
+        removeFromOverlay();
         ViewGroup parent = (ViewGroup) webView.getParent();
         if (parent != null) {
             parent.removeView(webView);
@@ -160,6 +182,7 @@ public final class SessionWebViewHolder {
             return;
         }
         if (webView != null && webView != view && !destroyed && !attached) {
+            removeFromOverlay();
             try {
                 webView.destroy();
             } catch (Throwable ignored) {
@@ -180,11 +203,106 @@ public final class SessionWebViewHolder {
         if (webView == null || destroyed) {
             return;
         }
+        removeFromOverlay();
         ViewGroup parent = (ViewGroup) webView.getParent();
         if (parent != null) {
             parent.removeView(webView);
         }
         attached = false;
+        keepVisibleInOverlay();
+    }
+
+    /**
+     * Activity is stopping (screen off, home): move the session view into the
+     * offscreen overlay so Chromium keeps counting the page VISIBLE while the
+     * activity's own window is hidden — without this, a stopped activity
+     * hides the page and the relay heartbeat throttles to death. The activity
+     * re-parents the same view in onStart (its layout slot was recorded).
+     */
+    public static void detachToOverlay(WebView view) {
+        if (view == null || destroyed || view != webView) {
+            return;
+        }
+        removeFromOverlay();
+        ViewGroup parent = (ViewGroup) view.getParent();
+        if (parent != null) {
+            parent.removeView(view);
+        }
+        attached = false;
+        keepVisibleInOverlay();
+    }
+
+    /**
+     * Backgrounded Android WebViews are marked HIDDEN by Chromium, which
+     * intensively throttles the page's JS timers — the SPA's relay heartbeat
+     * goes silent and the desktop drops the phone ("Desktop offline",
+     * live-reproduced 2026-10-25). Pinning the idle view in an entirely
+     * offscreen TYPE_APPLICATION_OVERLAY window keeps the page VISIBLE to
+     * Chromium (heartbeat alive, worst case 1 s timer alignment) while being
+     * unfocusable, untouchable and offscreen for the user. Needs the
+     * already-provisioned overlay permission; degrades silently to the old
+     * detach behavior without it.
+     */
+    public static void keepVisibleInOverlay() {
+        if (webView == null || destroyed || attached || inOverlay) {
+            return;
+        }
+        try {
+            Context app = webView.getContext().getApplicationContext();
+            WindowManager wm =
+                    (WindowManager) app.getSystemService(Context.WINDOW_SERVICE);
+            if (wm == null || !Settings.canDrawOverlays(app)) {
+                return;
+            }
+            WindowManager.LayoutParams p = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                            | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                            | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH,
+                    PixelFormat.TRANSLUCENT);
+            p.gravity = Gravity.TOP | Gravity.START;
+            // Entirely offscreen: never over the user's work, never composited.
+            p.x = -2 * app.getResources().getDisplayMetrics().widthPixels;
+            p.y = 0;
+            wm.addView(webView, p);
+            webView.setVisibility(View.VISIBLE);
+            inOverlay = true;
+            Log.i(TAG, "session WebView pinned offscreen-visible: heartbeat stays alive");
+        } catch (Throwable t) {
+            Log.w(TAG, "overlay pin failed; background page will throttle", t);
+        }
+    }
+
+    private static void removeFromOverlay() {
+        if (!inOverlay) {
+            return;
+        }
+        inOverlay = false;
+        if (webView == null) {
+            return;
+        }
+        try {
+            Context app = webView.getContext().getApplicationContext();
+            WindowManager wm =
+                    (WindowManager) app.getSystemService(Context.WINDOW_SERVICE);
+            if (wm != null) {
+                wm.removeViewImmediate(webView);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Service watchdog: re-pin when the system dropped the overlay window. */
+    public static void ensureOverlayAlive() {
+        if (webView != null && !destroyed && !attached && !inOverlay
+                && webView.getParent() == null) {
+            keepVisibleInOverlay();
+        }
     }
 
     /** URL changed (rotation heal): reload the shared view if it is idle. */

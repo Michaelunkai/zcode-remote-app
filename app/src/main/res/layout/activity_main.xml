@@ -75,6 +75,13 @@
                 android:text="@string/btn_retry" />
 
             <Button
+                android:id="@+id/btn_scan_qr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_scan_qr" />
+
+            <Button
                 android:id="@+id/btn_device_panel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
